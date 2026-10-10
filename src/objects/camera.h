@@ -21,6 +21,12 @@ extern CamRestrict *g_camRestriction;
 extern u32 g_camScriptFlags;
 extern ScnObject *g_camScriptOwner;
 extern s16 g_camShakeAmplitude;
+/* Slider positions: 0 = 0.5x, 16 = 1x, 32 = 2x speed / 12x acceleration. */
+enum { CAMERA_CONTROL_CENTRE = 16, CAMERA_CONTROL_MAX = 32 };
+extern u8 g_camSpeedSetting;
+extern u8 g_camAccelerationSetting;
+extern u8 g_camInvertJoystick;
+void Camera_SaveControlSettings();
 void Camera_ApplyRestriction(Vec3s *, s32 *, s16 *, s16 *, const CamRestrict *);
 void Camera_BuildViewMatrix(Camera *, const Vec3s *);
 void Camera_ClampToTrajectory(Vec3s *, Trajectory *, s32);

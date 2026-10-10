@@ -1877,6 +1877,7 @@ public:
     u32 noHitDir;                                  // static hit with a zero normal: the explosion plays undirected anim 1
     Vec3s hitDir;                                  // orientation for the anim-2 explosion (hit normal or last frameDelta)
     u16 explodeSound;                              // Sound_Play(0x44) handle
+    s32 debrisRemainder = 0;
 };
 
 class CannonBall2 : public ScnMobile {
@@ -1988,6 +1989,8 @@ public:
     Box *activationBox;                            // PROPERTY _ACTIVATIONBOX (tested in XZ only)
     ScnObject *barrel;                             // PROPERTY CANONDUMMY: the CanonDummy barrel model, rotated by ApplyAim
     ScnObject *ball;                               // PROPERTY CANNONBALL: the CannonBall driven by messages
+    s32 pitchRemainder = 0;
+    s32 yawRemainder = 0;
 };
 
 class Case : public ScnBody {
@@ -3722,7 +3725,7 @@ public:
     Box *activationBox;                            // PROPERTY_FALLINGROCK_ACTIVATIONBOX (0). Triggers on the Wolf's x and z only â€” the vertical pair (+6/
     u32 camHoldMs;                                 // How long the scripted camera is held after landing. Hard-coded to 500; the designers' PR
     u32 camElapsedMs;                              // Milliseconds accumulated (g_dtMs) since the rock landed, compared against camHoldMs to end the shot.
-    u16 fallTicksLeft;                             // Remaining descent steps. Init 5; each Update tick in state 1 translates 400 units DOWN, undoing exac
+    u16 fallTicksLeft;                             // Game-clock ticks until impact: five reference steps of descent, then one before impact.
     u16 impactSoundHandle;                         // Sound_Play handle for the impact sound (id 0x44). Zeroed at init and stored on landing, but never re
 };
 
@@ -3859,6 +3862,7 @@ public:
     InlineEmitter4 splashEmitter;                  // 4-slot inline emitter; the count byte is the emitter's own +0x21, i.e. this+0x241, not th
     EmitterFadeParams splashParams;                // PostLoadInit sets sheetIndex = 1, not 0 â€” SetState(1) is the one that sets 0 a
     u32 splashTime;                                // named from its uses in src/objects/floatingbox.cpp (the name and access width come from the code the
+    s32 pushRemainder = 0;
 };
 
 struct FlockScentSource {
@@ -3927,6 +3931,7 @@ public:
     ScnObject *obj;                                // the Wolf, the Sheep or the SlidingIceCube
     s32 waitingCrane;                              // 1 once the crane has been sent msg 0x37 for it at the last node; MoveCargo then does noth
     s32 done;                                      // 1 once the crane has taken it (msg 0x3e); FrozenRiver_UpdateCargo skips it
+    s32 spinRemainder = 0;
 };
 
 class FrozenRiver : public ScnLogic {
@@ -4137,7 +4142,7 @@ public:
     u8 baseG;                                      // saved tint byte 1
     u8 baseB;                                      // saved tint byte 2
     u8 _pad0db[0x1];
-    u8 fadeSteps;                                  // 10 when a fade starts, decremented once per frame; at 0 the end colour is writ
+    u8 fadeSteps;                                  // Ten reference steps per fade; at zero the end colour is written.
     u32 tintScratch;                               // member used as scratch while packing tintB/tintG/tintR into the tint colour
     u8 _pad0e4[0x4];
     s32 wolfDist;                                  // Vec3s_DistXZ(wolf.pos, pos) each frame, forced to 3000 while the Wolf is in the ghost cos
@@ -4153,6 +4158,7 @@ public:
     s32 showCapturedSheep;                         // 1 while the capture animation runs; Render draws the embedded body only then and only in
     s32 fireballTimerMs;                           // 1150 ms at capture, counted down by g_dtMs; at 0 the FireBall is told 0x5981 every frame
     u16 soundHandle;                               // handle of the last Sound_Play, stopped before the next one
+    s32 fadeRemainder = 0;
 };
 
 class GhostCostume : public ScnBody {
@@ -5562,7 +5568,7 @@ public:
     u8 monoState;                                  // name and access width as src/objects/monolithe.cpp uses the field
     u8 previousState;                              // name and access width as src/objects/monolithe.cpp uses the field
     u16 riderCount;                                // name and access width as src/objects/monolithe.cpp uses the field
-    u16 spinTicks;
+    u16 spinTicks;                                 // elapsed game-clock ticks through the sixteen-reference-step turn
     u16 ghostCount;                                // name and access width as src/objects/monolithe.cpp uses the field
     u8 _pad06c[0x4];
     s32 freezeAccepted;                            // name and access width as src/objects/monolithe.cpp uses the field
@@ -5918,6 +5924,7 @@ public:
     s32 exitBoxSpan;                               // name and access width as src/objects/pipe2.cpp uses the field
     u32 launchDelay;                               // name and access width as src/objects/pipe2.cpp uses the field
     u32 launchStart;                               // name and access width as src/objects/pipe2.cpp uses the field
+    s32 spinRemainder = 0;
 };
 
 struct Trajectory {
@@ -6965,6 +6972,7 @@ public:
     u32 talkedFlag;                                // 1 after a dialogue. Blocks re-talk until the Wolf is > 600 from guardPost (boat) or > 400 from nearJ
     u32 boatTextToggle;                            // alternates TEXT_IN_BOAT1/2 between boat talks
     u32 jailWarningGiven;                          // set while TEXT_IN_JAIL is spoken. Afterwards the Wolf entering jailBox makes jailed Sam draw (state
+    s32 circleRemainder = 0;
 };
 
 class SceneSheepPanel : public ScnBody {
@@ -7755,6 +7763,8 @@ public:
     Box *normalBox;                                // NORMALBOXID (Scn_GetPropBox)
     Box *reverseBox;                               // REVERSEBOXID (Scn_GetPropBox); tested before normalBox
     s32 wolfFrozen;                                // Wolf msg 0xE reply at start; msg 0xF sent on exit; cleared when another object takes the freeze (msg
+    s32 yawRemainder = 0;
+    s32 pitchRemainder = 0;
 };
 
 struct TexScroll {
@@ -9100,6 +9110,7 @@ public:
     u8 subState;                                   // ElasticSubState (state 3 only)
     u8 isWolfRider;
     u8 wolfFrozen;                                 // 1 if this elastic froze the Wolf (msg 0xe) for its launch camera
+    s32 tensionRemainder = 0;
 };
 
 class seesaw : public ScnBody {

@@ -15,6 +15,7 @@ void Camera_StartScripted(ScnObject *owner, Camera *cam, u16 rx, u16 ry, u16 rz,
 #include "world_draw.h"
 #include "../engine/fixed_math.h"
 #include "camera.h"
+#include "../engine/time.h"
 
 #define SDW_MEMBERS_ScnObject            \
     static void *operator new(uptr size); \
@@ -99,25 +100,34 @@ void Monolithe::Update()
                     list[i]->HandleMessage(this, MSG_SHEEP_SLEEP, 0);
             }
             break;
-        case MONOLITH_ST_SPIN:
+        case MONOLITH_ST_SPIN: {
+            if (g_dt <= 0)
+                break;
+            const s32 duration = 16 * TIME_REFERENCE_STEP;
+            const bool firstStep = spinTicks == 0;
+            s32 elapsed = spinTicks + g_dt;
+            if (elapsed > duration)
+                elapsed = duration;
+            s32 angle = elapsed * 0x80 / TIME_REFERENCE_STEP;
+            s32 step = angle - spinRot.y;
             turn.x = rot.x;
             turn.y = rot.y;
             turn.z = rot.z;
-            turn.y = (turn.y + 0x80) & 0xfff;
-            spinRot.y = spinRot.y + 0x80;
+            turn.y = (turn.y + step) & 0xfff;
+            spinRot.y = (s16)angle;
             rot = turn;
-            if (spinTicks == 0) {
+            if (firstStep) {
                 StartCamera(uiCamera->rot[0], uiCamera->rot[1], uiCamera->rot[2], &uiCamera->eye, uiCamera->focal,
                             CAMSCR_BLEND_OUT);
                 if (freezeEnabled)
                     freezeAccepted = freezeTarget->HandleMessage(this, MSG_FREEZE, 0);
             }
-            spinTicks++;
+            spinTicks = (u16)elapsed;
             for (i = 0; i < riderCount; i++) {
                 if (riders[i].object) {
-                    if (spinTicks == 1)
+                    if (firstStep)
                         riders[i].object->HandleMessage(this, MSG_SCRIPT_HOLD, 0);
-                    if (spinTicks == 16)
+                    if (spinTicks == duration)
                         riders[i].object->HandleMessage(this, MSG_SCRIPT_RELEASE, 0);
                     v.x = riders[i].offset.x;
                     v.y = riders[i].offset.y;
@@ -130,12 +140,12 @@ void Monolithe::Update()
                     rotation.x = riders[i].object->rot.x;
                     rotation.y = riders[i].object->rot.y;
                     rotation.z = riders[i].object->rot.z;
-                    rotation.y = rotation.y + 0x80;
+                    rotation.y = rotation.y + step;
                     riders[i].object->SetRotation(&rotation);
                     riders[i].object->SetPosition(&p);
                 }
             }
-            if (spinTicks >= 16) {
+            if (spinTicks >= duration) {
                 if (::SoundIsPlaying(spinSound))
                     StopSound(spinSound);
                 SetState(MONOLITH_ST_SLEEP_SHEEP);
@@ -148,6 +158,7 @@ void Monolithe::Update()
             if (BoxContains(sheepBox, &g_pWolf->pos))
                 SetState(MONOLITH_ST_WOLF_ON);
             break;
+        }
         case MONOLITH_ST_WOLF_ON:
             if (!BoxContains(sheepBox, &g_pWolf->pos))
                 monoState = previousState;

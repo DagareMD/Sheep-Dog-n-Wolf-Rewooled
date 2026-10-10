@@ -4,6 +4,8 @@
 #include "scenaric_props.h"
 #include "sdw_classes.h"
 #include "sdw_global_views.h"
+#include "camera.h"
+#include "../platform/save_store.h"
 
 /* ---- local bit views and scratch records ---- */
 struct CameraStateBits {
@@ -233,12 +235,59 @@ static char g_camDbgStars_57ea80[] = "***************\n";
 static char g_camDbgStartRunning_57ea94[] = "                   =>Start running0\n";
 static char g_camDbgSetMode_57eabc[] = "setcameragamemode\n";
 
-/* Yaw acceleration and deceleration used while the player turns the camera (right stick, L2/R2), in place of the
- * mode's yawAccel/yawDecel. The modes' own values (2048 in the follow camera) take ~0.7 s to reach full turning speed,
- * which feels sluggish on an analog stick; 24576 gets there in ~0.06 s. Raise it for snappier turns, lower it for
- * a softer start. Letting go of the stick still stops with the mode's yawDecel. */
-#define CAM_MANUAL_YAW_ACCEL 24576
+u8 g_camSpeedSetting = CAMERA_CONTROL_CENTRE;
+u8 g_camAccelerationSetting = CAMERA_CONTROL_CENTRE;
+u8 g_camInvertJoystick = 0;
 static u8 s_camManualYaw = 0;     /* set by Camera_OnManualRotate, consumed by the next Camera_SmoothToDesired */
+static u8 s_camManualPitch = 0;
+
+/* Each half of the slider is linear, with the original value exactly at its centre. */
+static s32 Camera_ScaleControl(s32 value, u8 setting, s32 maxScale)
+{
+    s32 scale = setting <= CAMERA_CONTROL_CENTRE
+                    ? 0x800 + setting * 0x800 / CAMERA_CONTROL_CENTRE
+                    : 0x1000 + (setting - CAMERA_CONTROL_CENTRE) * (maxScale - 0x1000) / CAMERA_CONTROL_CENTRE;
+    return (s32)((s64)value * scale >> 12);
+}
+
+static s32 Camera_ManualTurnStep(s32 input, s32 speed, s32 factor)
+{
+    speed = Camera_ScaleControl(speed, g_camSpeedSetting, 2 * 0x1000);
+    return (s32)((s64)input * g_dt * speed * factor >> 20);
+}
+
+static void Camera_LoadControlSettings()
+{
+    g_camSpeedSetting = g_camAccelerationSetting = CAMERA_CONTROL_CENTRE;
+    g_camInvertJoystick = 0;
+    if (!Save_KeyExists("CfgGame"))
+        return;
+    SaveKey *key = Save_OpenKey("CfgGame");
+    if (!key)
+        return;
+    u8 settings[3] = {CAMERA_CONTROL_CENTRE, CAMERA_CONTROL_CENTRE, 0};
+    unsigned type = 0, size = sizeof(settings);
+    if (Save_QueryValue(key, "CameraControls", &type, settings, &size) == SAVE_OK && type == 3 &&
+        (size == 2 || size == sizeof(settings))) {
+        if (settings[0] <= CAMERA_CONTROL_MAX)
+            g_camSpeedSetting = settings[0];
+        if (settings[1] <= CAMERA_CONTROL_MAX)
+            g_camAccelerationSetting = settings[1];
+        if (size == sizeof(settings) && settings[2] <= 1)
+            g_camInvertJoystick = settings[2];
+    }
+    Save_CloseKey(key);
+}
+
+void Camera_SaveControlSettings()
+{
+    SaveKey *key = Save_OpenKey("CfgGame");
+    if (!key)
+        return;
+    u8 settings[3] = {g_camSpeedSetting, g_camAccelerationSetting, g_camInvertJoystick};
+    Save_SetValue(key, "CameraControls", 3 /* REG_BINARY */, settings, sizeof(settings));
+    Save_CloseKey(key);
+}
 
 s32 g_camPitchVel = 0;
 s32 g_camYawVel = 0;
@@ -429,7 +478,7 @@ inline ZoneList *Camera_WaterZones(u8 type)
 
 void Camera_OnManualRotate(s32 direction)
 {
-    s_camManualYaw = 1;
+    s_camManualYaw = direction != 0;
     g_camTurnState = TURN_IDLE;
     g_camBlockedCountA = 0;
     g_camBlockedCountB = 0;
@@ -988,7 +1037,8 @@ void Camera_SmoothToDesired(Camera *cam, Vec3s *angles, const s32 *speeds, s16 *
                             const Vec3s *aimOffset, s32 onTrajectory)
 {
     struct Work {
-        s32 pitchAccel, yawAccel, yawDecel;
+        s32 pitchAccel, rollAccel, yawAccel, yawDecel;
+        s32 pitchSpeed, yawSpeed;
         CamModeParams *mode;
         CamRestrict *restriction;
         s32 shift, rate;
@@ -1001,16 +1051,12 @@ void Camera_SmoothToDesired(Camera *cam, Vec3s *angles, const s32 *speeds, s16 *
         w.pitchAccel = w.mode->pitchRollAccel;
         w.yawAccel = w.mode->yawAccel;
         w.yawDecel = w.mode->yawDecel;
+        w.pitchSpeed = speeds[0];
+        w.yawSpeed = speeds[1];
         if (onTrajectory) {
             w.pitchAccel <<= 1;
             w.yawAccel <<= 1;
             w.yawDecel <<= 1;
-        }
-        if (s_camManualYaw) {
-            if (w.yawAccel < CAM_MANUAL_YAW_ACCEL)
-                w.yawAccel = CAM_MANUAL_YAW_ACCEL;
-            if (w.yawDecel < CAM_MANUAL_YAW_ACCEL)
-                w.yawDecel = CAM_MANUAL_YAW_ACCEL;
         }
         if (g_camMode == CAM_LOOK) {
             w.shift = 1;
@@ -1018,17 +1064,27 @@ void Camera_SmoothToDesired(Camera *cam, Vec3s *angles, const s32 *speeds, s16 *
             w.yawAccel <<= w.shift;
             w.yawDecel <<= w.shift;
         }
+        w.rollAccel = w.pitchAccel;
+        if (s_camManualYaw) {
+            w.yawSpeed = Camera_ScaleControl(w.yawSpeed, g_camSpeedSetting, 2 * 0x1000);
+            w.yawAccel = Camera_ScaleControl(w.yawAccel, g_camAccelerationSetting, 12 * 0x1000);
+            w.yawDecel = Camera_ScaleControl(w.yawDecel, g_camAccelerationSetting, 12 * 0x1000);
+        }
+        if (s_camManualPitch) {
+            w.pitchSpeed = Camera_ScaleControl(w.pitchSpeed, g_camSpeedSetting, 2 * 0x1000);
+            w.pitchAccel = Camera_ScaleControl(w.pitchAccel, g_camAccelerationSetting, 12 * 0x1000);
+        }
         if (g_camMode == CAM_DIRECTED && g_camStateFlags.bits.hit) {
-            angles->x = Math_ApproachAngle(cam->rot.x, angles->x, &g_camPitchVel, speeds[0] >> 7, 2, 2, 0);
-            angles->y = Math_ApproachAngle(cam->rot.y, angles->y, &g_camYawVel, speeds[1] >> 7, 2, 2, 0);
+            angles->x = Math_ApproachAngle(cam->rot.x, angles->x, &g_camPitchVel, w.pitchSpeed >> 7, 2, 2, 0);
+            angles->y = Math_ApproachAngle(cam->rot.y, angles->y, &g_camYawVel, w.yawSpeed >> 7, 2, 2, 0);
             angles->z = Math_ApproachAngle(cam->rot.z, angles->z, &g_camRollVel, speeds[2] >> 7, 2, 2, 0);
         } else {
-            angles->x = Math_ApproachAngle(cam->rot.x, angles->x, &g_camPitchVel, speeds[0] << w.shift, w.pitchAccel,
+            angles->x = Math_ApproachAngle(cam->rot.x, angles->x, &g_camPitchVel, w.pitchSpeed << w.shift, w.pitchAccel,
                                            w.pitchAccel, 1);
-            angles->y = Math_ApproachAngle(cam->rot.y, angles->y, &g_camYawVel, speeds[1] << w.shift, w.yawAccel,
+            angles->y = Math_ApproachAngle(cam->rot.y, angles->y, &g_camYawVel, w.yawSpeed << w.shift, w.yawAccel,
                                            w.yawDecel, 1);
-            angles->z = Math_ApproachAngle(cam->rot.z, angles->z, &g_camRollVel, speeds[2] << w.shift, w.pitchAccel,
-                                           w.pitchAccel, 1);
+            angles->z = Math_ApproachAngle(cam->rot.z, angles->z, &g_camRollVel, speeds[2] << w.shift, w.rollAccel,
+                                           w.rollAccel, 1);
         }
         if (angles->x > 0x800) {
             if (angles->x < 0xc00)
@@ -1061,6 +1117,7 @@ void Camera_SmoothToDesired(Camera *cam, Vec3s *angles, const s32 *speeds, s16 *
         g_camFocal = focal;
     }
     s_camManualYaw = 0;
+    s_camManualPitch = 0;
     g_camStateFlags.bits.cut = 0;
     g_screen.SetProjection(g_camFocal);
 }
@@ -1820,7 +1877,7 @@ void Camera_UpdateSamChase(Camera *camera, Pad *pad)
                         w.side = 256;
                 }
             }
-            w.side = w.side * g_dt * w.speeds.y * 2 >> 20;
+            w.side = Camera_ManualTurnStep(w.side, w.speeds.y, 2);
         }
         if (w.side)
             Camera_OnManualRotate(w.side);
@@ -2073,7 +2130,7 @@ void Camera_UpdateFollow(Camera *camera, Pad *pad)
             w.side = 0;
         if (w.side > 0 && Vec3s_ManhattanDist(&camera->pos, &g_camBlockPosPos) < 80)
             w.side = 0;
-        w.side = (w.side * g_dt * w.speeds.y * 2) >> 20;
+        w.side = Camera_ManualTurnStep(w.side, w.speeds.y, 2);
     }
     w.side += (g_camAutoYawRate * 256 * g_dt) >> 20;
     if (g_camReqDist)
@@ -2259,6 +2316,7 @@ void Camera_UpdateLook(Camera *camera, Pad *pad)
     if (w.side | w.vertical) {
         g_camFlags.manual = 1;
         Camera_OnManualRotate(w.side);
+        s_camManualPitch = w.vertical != 0;
     }
     w.distance = w.params->dist;
     if (g_camFlags.manual) {
@@ -2269,8 +2327,8 @@ void Camera_UpdateLook(Camera *camera, Pad *pad)
         w.angles.y = g_camReqRot.y;
     }
     w.angles.z = 0;
-    w.side = w.side * g_dt * w.params->yawSpeed >> 20;
-    w.vertical = w.vertical * g_dt * w.params->pitchSpeed >> 20;
+    w.side = Camera_ManualTurnStep(w.side, w.params->yawSpeed, 1);
+    w.vertical = Camera_ManualTurnStep(w.vertical, w.params->pitchSpeed, 1);
     if (w.vertical != 0)
         w.angles.x = (camera->rot.x + w.vertical) & 0xfff;
     if (w.side != 0)
@@ -2407,7 +2465,7 @@ void Camera_UpdateDirected(Camera *camera, Pad *pad)
         if (w.side != 0) {
             g_camFlags.manual = 1;
             Camera_OnManualRotate(w.side);
-            w.side = (w.side * g_dt * w.params->yawSpeed * 2) >> 20;
+            w.side = Camera_ManualTurnStep(w.side, w.params->yawSpeed, 2);
             w.angles.y = (camera->rot.y + w.side) & 0xfff;
         }
     }
@@ -2801,6 +2859,7 @@ void Camera_InitSettings()
     s32 index;
     if (!g_camSettingsInit) {
         g_camSettingsInit = 1;
+        Camera_LoadControlSettings();
         g_camMinPitch = 0xa0;
         g_camSettings = 0x2e;
         g_camAutoYawGain = 0x1000;
