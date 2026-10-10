@@ -3232,6 +3232,11 @@ sptr Wolf::HandleMessage(ScnObject *sender, u32 msgId, void *arg)
             }
             case MSG_WOLF_IS_NOISY: /* quiet? */
                 rv = !(desc->flags & WSF_BUSY_OR_QUIET) && !(desc->flags & WSF_STATIONARY);
+                // Landing is entered before GroundCommon can switch to sneaking.
+                // Keep that transition quiet using the processed sneak action.
+                if ((state == WOLF_ST_LAND_IDLE || state == WOLF_ST_LAND_MOVE) &&
+                    (padBits & WOLF_ACT_SNEAK_HELD))
+                    rv = 0;
                 break;
             case MSG_WOLF_IS_VISIBLE: /* visible to the sender? */
                 if (!(flags & WOLF_FB_IN_SHADOW_ZONE)) {
