@@ -10,6 +10,7 @@ u32 Anim_Start(Instance *instance, Animator *animator, u16 id, u32 options);
 #include "world_draw.h"
 #include "../engine/fixed_math.h"
 #include "../engine/id_list.h"
+#include "../engine/time.h"
 
 #define SDW_MEMBERS_ScnObject            \
     static void *operator new(uptr size); \
@@ -509,6 +510,7 @@ void Sam_Pirate::SetState(u8 next)
                 case 0:
                     SetPosition(&spawnPos);
                     circleAngle = -30;
+                    circleRemainder = 0;
                     circlePivot.x = spawnPos.x;
                     circlePivot.y = spawnPos.y;
                     circlePivot.z = spawnPos.z;
@@ -574,6 +576,7 @@ void Sam_Pirate::SetState(u8 next)
                 case 0:
                     SetPosition(&jailSpot);
                     circleAngle = -30;
+                    circleRemainder = 0;
                     circlePivot.x = jailSpot.x;
                     circlePivot.y = jailSpot.y;
                     circlePivot.z = jailSpot.z;
@@ -712,6 +715,9 @@ void Sam_Pirate::Render(Camera *view)
 
 s16 Sam_Pirate::CircleStep(Vec3s offset, Vec3s pivot, s16 angle, s16 step)
 {
+    step = (s16)Time_ScaleStep(step, circleRemainder);
+    if (!step)
+        return angle;
     struct Work {
         Mat34s matrix;
         Vec4i rotated;
@@ -733,7 +739,8 @@ s16 Sam_Pirate::CircleStep(Vec3s offset, Vec3s pivot, s16 angle, s16 step)
     w.newPos.x = pivot.x + (s16)w.rotated.x;
     w.newPos.y = pos.y;
     w.newPos.z = pivot.z + (s16)w.rotated.z;
-    FaceToward(w.newPos);
+    if (w.newPos.x != pos.x || w.newPos.z != pos.z)
+        FaceToward(w.newPos);
     SetPosition(&w.newPos);
     return angle;
 }

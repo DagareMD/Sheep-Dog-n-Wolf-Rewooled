@@ -4,6 +4,7 @@
 #include "sdw_types.h"
 #include "sdw_enums.h"
 #include "scenaric_props.h"
+#include "../engine/time.h"
 #include "../sdk/d3d7.h"
 class Mat44;
 #include "../sdk/crt.h"
@@ -96,6 +97,7 @@ void elastic::ResetToItem()
 {
     SetBandMode(0);
     tension = 0;
+    tensionRemainder = 0;
     launchTension = 0;
     holdMs = 0;
     overstretched = 0;
@@ -233,9 +235,11 @@ void elastic::UpdateTensionColour()
     for (i = 0; i < 30; i++)
         ((u32(*)[2])tensionColourTable)[i][0] = bandColour;
     if (tension > 0)
-        tension -= 0x40;
-    if (tension < 0)
+        tension -= Time_ScaleStep(0x40, tensionRemainder);
+    if (tension <= 0) {
         tension = 0;
+        tensionRemainder = 0;
+    }
 }
 void elastic::SetupLaunch(s32 baseY, const Vec3s *amount, s32 height, s32 distance, s32 speed)
 {

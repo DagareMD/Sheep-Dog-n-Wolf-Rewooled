@@ -51,6 +51,7 @@ inline InlineEmitter16::InlineEmitter16()
 #include "../engine/sound_mgr.h"
 #include "../engine/maths.h"
 #include "../engine/input.h"
+#include "../engine/time.h"
 s32 Scenaric_FindByClass(u16, ScnObject **, s32);
 extern s32 g_camShakeElapsed, g_camShakeDuration, g_dt;
 s32 Rand_Bounded(s32);
@@ -325,7 +326,7 @@ void CannonBall::Update()
                                 UpdateChaseCamera(pos);
                             prevDistSq = distSq;
                             break;
-                        case CB_ST_EXPLODE:
+                        case CB_ST_EXPLODE: {
                             explodeTimerMs -= g_dtMs;
                             if (explodeTimerMs <= 0) {
                                 SetPosition(&homePos);
@@ -350,11 +351,14 @@ void CannonBall::Update()
                                 SetState(CB_ST_IDLE);
                                 break;
                             }
-                            if (debrisSmokeParams.sizeEnd < 10 && debrisSmokeParams.sizeStart > 1)
-                                --debrisSmokeParams.sizeStart;
-                            if (debrisSmokeParams.sizeEnd > 1)
-                                --debrisSmokeParams.sizeEnd;
-                            ++gravityTicks;
+                            s32 steps = Time_ScaleStep(1, debrisRemainder);
+                            while (steps-- > 0) {
+                                if (debrisSmokeParams.sizeEnd < 10 && debrisSmokeParams.sizeStart > 1)
+                                    --debrisSmokeParams.sizeStart;
+                                if (debrisSmokeParams.sizeEnd > 1)
+                                    --debrisSmokeParams.sizeEnd;
+                                ++gravityTicks;
+                            }
                             if (hitWolf) {
                                 SetPosition(&g_pWolf->pos);
                                 rot.y = g_pWolf->GetFacing() + 0x800;
@@ -368,6 +372,7 @@ void CannonBall::Update()
                             if (!cameraReleased)
                                 UpdateChaseCamera(pos);
                             break;
+                        }
                     }
                     if (hasExplosionFx && fxActive) {
                         if (explosionFx.AnimFlags(ANIM_F_FINISHED))
@@ -519,6 +524,7 @@ void CannonBall::SetState(u8 next)
             lifeLeftMs = lifetimeMs;
             EnableBoxCollide(0);
             gravityTicks = 0;
+            debrisRemainder = 0;
             explodeTimerMs = 2500;
             debrisSmokeParams.sizeStart = 20;
             debrisSmokeParams.sizeEnd = 50;

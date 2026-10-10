@@ -7,7 +7,7 @@
  * A cargo slot (RiverCargo) moves toward path point `node` at 150 units/s on x/z and keeps its height; within 50 of
  * the point it takes the next one, unless another cargo is moving toward it (then it waits). At the last point it
  * calls the Crane (msg 0x37) unless the crane is busy; the Crane answers with msg 0x3e 1 when its hook takes the
- * cargo, which frees the slot, and 0x3e 0 when it is done. Every cargo also turns by 8/4096 of a turn per frame.
+ * cargo, which frees the slot, and 0x3e 0 when it is done. Cargo turns by 8/4096 per reference game step.
  * */
 
 #define SDW_MEMBERS_ScnObject            \
@@ -44,6 +44,7 @@ extern Wolf *g_pWolf;
 #include "../engine/id_list.h"
 #include "../engine/scn_tools.h"
 #include "../engine/maths.h"
+#include "../engine/time.h"
 extern s32 g_dtMs; /* g_dt * 1000 >> 12 */
 
 s32 Scenaric_FindByClass(u16 classId, ScnObject **out, s32 max);
@@ -289,6 +290,7 @@ s32 FrozenRiver::AddCargo(ScnObject *obj)
     switch (obj->GetClassId()) {
         case CLASSID_WOLF:
             if (!wolfInRiver) {
+                cargo[0].spinRemainder = 0;
                 cargo[0].obj = g_pWolf;
                 cargo[0].node = FindNextNode(&cargo[0].obj->pos);
                 if (IsNodeTaken(cargo[0].node, &cargo[0]))
@@ -302,6 +304,7 @@ s32 FrozenRiver::AddCargo(ScnObject *obj)
             break;
         case CLASSID_SHEEP:
             if (!sheepInRiver) {
+                cargo[1].spinRemainder = 0;
                 cargo[1].obj = obj;
                 cargo[1].node = FindNextNode(&cargo[1].obj->pos);
                 if (IsNodeTaken(cargo[1].node, &cargo[1]))
@@ -406,13 +409,13 @@ void FrozenRiver::MoveCargo(RiverCargo *c)
     }
 }
 
-/* turn a cargo by 8/4096 of a turn: every frame, whatever the frame rate. */
+/* Retain the original spin rate across update rates. */
 void FrozenRiver::SpinCargo(RiverCargo *c)
 {
     s16 facing;
 
     facing = c->obj->rot.y;
-    facing += 8;
+    facing += (s16)Time_ScaleStep(8, c->spinRemainder);
     c->obj->SetFacing(facing);
 }
 
@@ -431,6 +434,7 @@ void FrozenRiver::LaunchFloe()
         while (floes[i].active)
             i++;
         floes[i].done = 0;
+        floes[i].spinRemainder = 0;
         floes[i].obj->SetPosition(&floeStart);
         floes[i].node = FindNextNode(&floes[i].obj->pos);
         if (IsNodeTaken(floes[i].node, &floes[i]))

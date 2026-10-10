@@ -57,6 +57,7 @@ extern Wolf *g_pWolf;
 #include "../engine/scn_tools.h"
 #include "../engine/sound_mgr.h"
 #include "camera.h"
+#include "../engine/time.h"
 #define g_camPos (g_camera.pos)
 extern s32 g_dtMs;                 /* g_dt * 1000 >> 12 */
 extern "C" const s16 *g_pCosTable; /* g_sinTable4096 + 1024 */
@@ -65,6 +66,7 @@ u16 Sound_Play(u16 soundId, void *owner, u16 volume, u8 flags, s32 rate);
 
 /* the shared eruption phase: one angle for every geyser in the level, advanced once per carried Wolf */
 s32 g_geyserWobblePhase;
+static s32 g_geyserWobbleRemainder = 0;
 
 /* ---- inline helpers ---- */
 
@@ -193,7 +195,7 @@ void GeyserOut::Update()
                                 speed = 4000 - wolfSpeedPerUnit * Vec3s_Dist(&where, &startPoint);
                                 if (speed > 2000)
                                     speed = 2000;
-                                g_geyserWobblePhase += 0x14d;
+                                g_geyserWobblePhase += Time_ScaleStep(0x14d, g_geyserWobbleRemainder);
                                 angl = g_geyserWobblePhase & 0xfff;
                                 shake = (g_pCosTable[angl] * 500 + 250) >> 12;
                                 speed += shake;

@@ -48,6 +48,7 @@ u16 Sound_Play(u16 soundId, void *owner, u16 volume, u8 priority, s32 rate);
 #include "../engine/id_list.h"
 #include "animation.h"
 #include "../engine/approach.h"
+#include "../engine/time.h"
 #include "camera.h"
 #include "sdw_classes.h"
 #define SDW_INLINE_INSTANCE_INST 1
@@ -237,7 +238,8 @@ void Ghost::Update()
                 ghosts[i]->HandleMessage(this, MSG_GHOST_RETHINK, 0);
         }
     }
-    if (fadeDir) {
+    s32 fadeUpdates = fadeDir ? Time_ScaleStep(1, fadeRemainder) : 0;
+    while (fadeDir && fadeUpdates-- > 0) {
         tintR = (u8)(tintR + fadeDir * stepR / 10);
         tintG = (u8)(tintG + fadeDir * stepG / 10);
         tintB = (u8)(tintB + fadeDir * stepB / 10);
@@ -516,8 +518,10 @@ sptr Ghost::HandleMessage(ScnObject *sender, u32 msgId, void *arg)
             break;
         case MSG_GHOST_SET_VULNERABLE: /* the Hoover arms or disarms: fade to blue and back */
             if (state != GHOST_ST_CATCH_WOLF) {
-                if (vulnerable != (s32)(sptr)arg)
+                if (vulnerable != (s32)(sptr)arg) {
                     arg ? (fadeDir = 1) : (fadeDir = -1);
+                    fadeRemainder = 0;
+                }
                 vulnerable = (s32)(sptr)arg;
                 fadeSteps = 10;
                 avoidNode = GHOST_NODE_NONE;
