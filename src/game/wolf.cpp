@@ -2644,6 +2644,23 @@ void Wolf::Update()
                 SetMode(WOLF_MODE_NORMAL, WOLF_ST_WADE);
         }
     }
+    /* Recover a stationary fall through the ice-cube timeout's fade, even if collision never reports a landing.
+     * WOLF_ST_FALL also covers carrying; the other states are the disguise/flattened equivalents. */
+    if ((state == WOLF_ST_FALL || state == WOLF_ST_BUSH_FALL || state == WOLF_ST_SHEEPCOSTUME_FALL ||
+         state == WOLF_ST_GHOSTCOSTUME_FALL || state == WOLF_ST_FLATTENED_FALL) &&
+        CanControl() && !g_cinePlayer.IsActive() && !InstFlags(INST_F_ATTACHED)) {
+        if (pos.y != stuckFallY)
+            stuckFallTicks = 0;
+        else {
+            stuckFallTicks += g_dt;
+            if (stuckFallTicks >= 10 * 0x1000) {
+                stuckFallTicks = 0;
+                RestartNoAnim(0x1000);
+            }
+        }
+    } else
+        stuckFallTicks = 0;
+    stuckFallY = pos.y;
     if (heldObject)
         heldObject->SetPosition(&pos);
     if (fxFlags & (WOLF_FA_PROP0 | WOLF_FA_PROP6_BILLBOARD | WOLF_FA_DEATHZONE_PROP | WOLF_FA_PROP7 | WOLF_FA_PROP4 |
@@ -3597,6 +3614,8 @@ void Wolf::EnterState(u8 newState)
     s32 reply;
 
     descriptor = &g_wolfMoveBank0[mode].states[newState];
+    if (state != newState)
+        stuckFallTicks = 0;
     state = newState;
     stateTime = 0;
     footstepTimer = 0;
@@ -3827,6 +3846,8 @@ void Wolf::IdleAnimStep()
 void Wolf::ResetState()
 {
     state = WOLF_ST_IDLE;
+    stuckFallTicks = 0;
+    stuckFallY = pos.y;
     surface = WOLF_SURFACE_NORMAL;
     waterZone = 0;
     coverObject = 0;

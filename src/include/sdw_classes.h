@@ -8719,6 +8719,8 @@ public:
     u8 camOverride;                                // 0xFF none
     u32 fxFlags;                                   // attached-effect flags: 4 ice block floating, 8 dizzy fx, 0x4000 costume puff, 0x100000 ice block gro
     u32 flags;                                     // bits seen here: 0x200000 / lock the stick heading to one axis, 0x400/0xC00 resp. 0/0x800, 0
+    s32 stuckFallTicks;                            // gameplay ticks at unchanged Y while in an ordinary falling state (4096 ticks/s)
+    s16 stuckFallY;                                // Y at the previous falling-guard update
 };
 
 struct WolfArcScratch {
