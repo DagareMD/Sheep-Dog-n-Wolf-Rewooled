@@ -809,9 +809,11 @@ void elastic::PostLoadInit()
     f->faces = new RenderPoly[f->faceCount];
     for (e = 0; e < 8; e++) {
         f->faces[e].type = RPOLY_OPAQUE;
-        ((u32 *)f->faces[e].verts)[16] = 0x6b1917;
-        ((u32 *)f->faces[e].verts)[10] = 0x6b1917;
-        ((u32 *)f->faces[e].verts)[4] = 0x6b1917;
+        /* This generated, untextured band bypasses the corrected colour loader and texture modulation.
+         * Double its original RGB (107, 25, 23) here to apply the same brightness correction. */
+        ((u32 *)f->faces[e].verts)[16] = 0xd6322e;
+        ((u32 *)f->faces[e].verts)[10] = 0xd6322e;
+        ((u32 *)f->faces[e].verts)[4] = 0xd6322e;
     }
     for (e = 0; e < 4; e++) {
         f->faces[e * 2].poly.idx[0] = f->faces[e * 2 + 1].poly.idx[0] = e;
