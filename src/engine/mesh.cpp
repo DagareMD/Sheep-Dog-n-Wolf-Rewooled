@@ -1031,8 +1031,12 @@ void Mesh::Mesh_DrawOutlined(PolyBatcher *batcher, Frustrum *frustrum, float out
         v0_28 = verts_4 + faces[i_16].poly.idx[0];
         v1_17 = verts_4 + faces[i_16].poly.idx[1];
         v2_16 = verts_4 + faces[i_16].poly.idx[2];
+        /* Round both products separately: fusing the subtraction can give a collapsed shadow-box face a
+         * nonzero area, changing which edges receive outlines as the camera moves. */
+        const volatile float areaProduct0 = (v1_17->x - v0_28->x) * (v2_16->y - v0_28->y);
+        const volatile float areaProduct1 = (v1_17->y - v0_28->y) * (v2_16->x - v0_28->x);
         if ((v0_28->z > 1.0f) ^ (v1_17->z > 1.0f) ^ (v2_16->z > 1.0f) ^ (flip_19 == 1) ^
-            ((v1_17->x - v0_28->x) * (v2_16->y - v0_28->y) - (v1_17->y - v0_28->y) * (v2_16->x - v0_28->x) <= 0.0f)) {
+            (areaProduct0 - areaProduct1 <= 0.0f)) {
             if ((v0_28->rhw > invFar_14 || v1_17->rhw > invFar_14 || v2_16->rhw > invFar_14) &&
                 (v0_28->z >= 0.0f || v1_17->z >= 0.0f || v2_16->z >= 0.0f) &&
                 (v0_28->x < viewW_37 || v1_17->x < viewW_37 || v2_16->x < viewW_37) &&
@@ -1300,8 +1304,11 @@ void Mesh::Mesh_DrawOutlinedTinted(u32 tintColor, float tintBlend, PolyBatcher *
         v0_28 = verts_4 + faces[i_16].poly.idx[0];
         v1_17 = verts_4 + faces[i_16].poly.idx[1];
         v2_17 = verts_4 + faces[i_16].poly.idx[2];
+        /* Keep the same separate rounding as the untinted outline path. */
+        const volatile float areaProduct0 = (v1_17->x - v0_28->x) * (v2_17->y - v0_28->y);
+        const volatile float areaProduct1 = (v1_17->y - v0_28->y) * (v2_17->x - v0_28->x);
         if ((v0_28->z > 1.0f) ^ (v1_17->z > 1.0f) ^ (v2_17->z > 1.0f) ^ (flip_19 == 1) ^
-            ((v1_17->x - v0_28->x) * (v2_17->y - v0_28->y) - (v1_17->y - v0_28->y) * (v2_17->x - v0_28->x) <= 0.0f)) {
+            (areaProduct0 - areaProduct1 <= 0.0f)) {
             if ((v0_28->rhw > invFar_14 || v1_17->rhw > invFar_14 || v2_17->rhw > invFar_14) &&
                 (v0_28->z >= 0.0f || v1_17->z >= 0.0f || v2_17->z >= 0.0f) &&
                 (v0_28->x < viewW || v1_17->x < viewW || v2_17->x < viewW) &&
