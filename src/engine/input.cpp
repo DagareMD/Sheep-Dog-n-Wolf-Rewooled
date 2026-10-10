@@ -34,6 +34,7 @@ inline s32 Pad::IsAnalog()
 }
 
 #include "../sdk/crt.h"
+#include "../platform/platform.h"
 
 /* ---- globals ---- */
 #include "draw2d.h"
@@ -533,7 +534,8 @@ s32 Pad::JustConnected()
 }
 
 /* menuCur = raw buttons with the left stick folded in as d-pad bits (past a dead zone of 56 per axis:
- * right 0x20, left 0x80, down 0x40, up 0x10), then its auto-repeat (g_padMenuRepeat). */
+ * right 0x20, left 0x80, down 0x40, up 0x10), plus the controller's physical D-pad for menus only,
+ * then its auto-repeat (g_padMenuRepeat). */
 void Pad::AnalogToDpadBits()
 {
     s16 x = raw.leftX - 0x80;
@@ -552,6 +554,18 @@ void Pad::AnalogToDpadBits()
         menuCur &= (u16)~PAD_DOWN;
     else
         menuCur &= (u16)~PAD_UP;
+    if (this == &g_pad && raw.status == 0 && g_inputMgr.joystick &&
+        g_inputMgr.current == g_inputMgr.joystick) {
+        unsigned directions = Platform_ReadJoystickDpad();
+        if (directions & PLATFORM_DPAD_UP)
+            menuCur &= (u16)~PAD_UP;
+        if (directions & PLATFORM_DPAD_RIGHT)
+            menuCur &= (u16)~PAD_RIGHT;
+        if (directions & PLATFORM_DPAD_DOWN)
+            menuCur &= (u16)~PAD_DOWN;
+        if (directions & PLATFORM_DPAD_LEFT)
+            menuCur &= (u16)~PAD_LEFT;
+    }
     AutoRepeat(&menuRepeat, menuCur);
 }
 
