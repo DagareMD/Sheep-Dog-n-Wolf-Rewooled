@@ -139,9 +139,13 @@ sptr Chronometer::HandleMessage(ScnObject *sender, u32 msgId, void *arg)
                         timeFixed = (s32)(sptr)arg;
                     if ((timeFixed * 1000 >> 12) > 10000)
                         Sound_SetVolume(tickSoundHandle, 0);
-                    else if (timeFixed)
-                        Sound_SetVolume(tickSoundHandle, 63 - ((timeFixed << 12) / 1000 * 63) / 10000);
-                    else
+                    else if (timeFixed) {
+                        u16 volume = (u16)(63 - ((timeFixed << 12) / 1000 * 63) / 10000);
+                        /* Cap the wrapped tick volume before SFX scaling, preserving the original tick timing. */
+                        if (volume > 255)
+                            volume = 255;
+                        Sound_SetVolume(tickSoundHandle, volume);
+                    } else
                         Sound_SetVolume(tickSoundHandle, 63);
                 } else
                     timeFixed = (s32)(sptr)arg;
