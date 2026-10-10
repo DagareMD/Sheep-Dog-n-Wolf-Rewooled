@@ -61,6 +61,7 @@ DWORD Reg_ReadBinary(HKEY key, const char *name, void *buf, DWORD bufSize);
 u8 Reg_WriteBinary(HKEY key, const char *name, const void *data, DWORD size);
 
 #include "draw2d.h"
+#include "../objects/camera.h"
 extern s32 g_dtRawMs;
 
 /* A keyboard key the bindings may not take (Pause, P, Enter, Esc). Written as a conditional expression: its value is
@@ -374,7 +375,7 @@ long InputMgr::Poll()
         if (current->isDigital == 0) {
             axisX = (u8)(s32)(current->axisX * 128.0f) + 0x80;
             axisY = (u8)(s32)(current->axisY * 128.0f) + 0x80;
-            rightX = InputMgr_StickByte(current->axisRX);
+            rightX = InputMgr_StickByte(g_camInvertJoystick ? -current->axisRX : current->axisRX);
             rightY = InputMgr_StickByte(current->axisRY);
         } else {
             axisX = 0x80;

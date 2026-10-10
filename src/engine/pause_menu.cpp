@@ -38,6 +38,7 @@ typedef void (*MenuHandler)(u8 msg, MenuPage *self);
 #include "input.h"
 #include "screen.h"
 #include "../objects/menu.h"
+#include "../objects/camera.h"
 #include "prompt.h"
 #include "sound_mgr.h"
 #include "sfx_volume.h"
@@ -68,7 +69,7 @@ char *g_soundModeNames[3] = {0};      /* BSM group 0x10, 0x1000 / 0x2000 / 0x400
 u8 g_pauseCfg[7] = {0};               /* "CfgGame" registry image written by PauseMenu_Exit */
 MenuPage g_pausedMenuItems[50] = {0}; /* node storage of g_pausedMenu */
 char *g_uiString1B = 0;
-UiCursor g_menuCursors[4] = {0};      /* slider cursors: 0..2 the volumes, 3 the fog */
+UiCursor g_menuCursors[6] = {0};      /* slider cursors: 0..2 volumes, 3 fog, 4 camera speed, 5 camera acceleration */
 s16 g_pauseBoxRect[4] = {0};          /* {x, y, w, h} of the pause box on the 512 x 240 screen */
 s16 g_pauseTextRect[4] = {0};         /* the title / footer text window PauseMenu_Update sets */
 u8 g_progressPauseCopy[0x2a] = {
@@ -157,6 +158,9 @@ void PauseMenu_ItemSoundsEnabled(u8 msg, MenuPage *item);
 void PauseMenu_ItemFog(u8 msg, MenuPage *item);
 void PauseMenu_ItemDisplayDone(u8 msg, MenuPage *item);
 void PauseMenu_ItemControlDevice(u8 msg, MenuPage *item);
+void PauseMenu_ItemCameraSpeed(u8 msg, MenuPage *item);
+void PauseMenu_ItemCameraAcceleration(u8 msg, MenuPage *item);
+void PauseMenu_ItemInvertCameraJoystick(u8 msg, MenuPage *item);
 void PauseMenu_ItemBindUp(u8 msg, MenuPage *item);
 void PauseMenu_ItemBindRight(u8 msg, MenuPage *item);
 void PauseMenu_ItemBindDown(u8 msg, MenuPage *item);
@@ -219,7 +223,7 @@ inline ProgressOptionBits *Progress_Options()
     return &g_pProgress->optionBits;
 }
 
-/* per-level UI set-up, called once by Load_DAVnWAR: the pause box, the four slider cursors' skins, the UI
+/* per-level UI set-up, called once by Load_DAVnWAR: the pause box, the slider cursors' skins, the UI
  * strings the option rows print, and the BSM language mask for the player's language. */
 void Menus_LoadLevelUi()
 {
@@ -230,7 +234,7 @@ void Menus_LoadLevelUi()
     g_pauseSlidersShown = 0;
     PauseMenu_SetBox(0x1c0, 0xa0);
     g_pauseBoxRect[3] -= g_pCurFont->lineHeight / 2;
-    for (i = 0; i < 4; i++)
+    for (i = 0; i < sizeof(g_menuCursors) / sizeof(g_menuCursors[0]); i++)
         g_menuCursors[i].UiFrame_LoadSkin(0, 0);
     g_settingNames[0] = Text_GetUiString(UISTR_MONO);
     g_settingNames[1] = Text_GetUiString(UISTR_STEREO);
@@ -677,6 +681,8 @@ void PauseMenu_Build()
     Menu_AddItems(dispPage, PauseMenu_ItemFog, PauseMenu_ItemDisplayDone, MENU_END);
     Menu_AddItems(padPage, PauseMenu_ItemControlDevice, MENU_END);
     bindPage = Menu_AddPage(padPage, (void *)PauseMenu_PageEditConfig, 1);
+    Menu_AddItems(padPage, PauseMenu_ItemCameraSpeed, PauseMenu_ItemCameraAcceleration,
+                  PauseMenu_ItemInvertCameraJoystick, MENU_END);
     Menu_AddItems(bindPage, PauseMenu_ItemBindUp, PauseMenu_ItemBindRight, PauseMenu_ItemBindDown,
                   PauseMenu_ItemBindLeft, PauseMenu_ItemBindAction, PauseMenu_ItemBindJump,
                   PauseMenu_ItemBindWolfEyeView, PauseMenu_ItemBindRun, PauseMenu_ItemBindQuickInventory,
@@ -915,6 +921,65 @@ void PauseMenu_ItemControlDevice(u8 msg, MenuPage *item)
                     g_inputMgr.SelectDevice(INPUTDEV_MASK_KEYBOARD);
                     break;
             }
+            break;
+    }
+}
+
+/* Camera sliders use 33 positions so the 1x centre is reachable exactly from either endpoint. */
+static void PauseMenu_CameraControlItem(u8 msg, MenuPage *item, u8 cursorIdx, u8 *value, const char *label)
+{
+    switch (msg) {
+        case MENU_MSG_DRAW_SELECTED:
+            g_menuCursors[cursorIdx].Animate();
+            Menu_BuildNavFooter();
+            break;
+        case MENU_MSG_DRAW:
+            Menu_Printf(item, TEXTALIGN_LEFT, "%s", label);
+            if (item->selected || g_pauseSlidersShown) {
+                g_menuCursors[cursorIdx].SetPos(0x15c, (s16)g_textCursorY + g_textWinY);
+                g_menuCursors[cursorIdx].SetSlide(*value == CAMERA_CONTROL_MAX ? 255 : *value * 8);
+                g_menuCursors[cursorIdx].Draw(g_screenLayerBase + 2);
+            }
+            break;
+        case MENU_MSG_LEFT:
+            if (*value > 0)
+                --*value;
+            break;
+        case MENU_MSG_RIGHT:
+            if (*value < CAMERA_CONTROL_MAX)
+                ++*value;
+            break;
+        case MENU_MSG_VALUE_CHANGED:
+            Camera_SaveControlSettings();
+            Ui_PlayMoveSound();
+            break;
+    }
+}
+
+void PauseMenu_ItemCameraSpeed(u8 msg, MenuPage *item)
+{
+    PauseMenu_CameraControlItem(msg, item, 4, &g_camSpeedSetting, "Camera Speed");
+}
+
+void PauseMenu_ItemCameraAcceleration(u8 msg, MenuPage *item)
+{
+    PauseMenu_CameraControlItem(msg, item, 5, &g_camAccelerationSetting, "Camera Acceleration");
+}
+
+void PauseMenu_ItemInvertCameraJoystick(u8 msg, MenuPage *item)
+{
+    switch (msg) {
+        case MENU_MSG_DRAW_SELECTED:
+            Menu_BuildNavFooter();
+            break;
+        case MENU_MSG_DRAW:
+            Menu_Printf(item, TEXTALIGN_LEFT, "Invert Camera Joystick");
+            Menu_Printf(item, TEXTALIGN_RIGHT, g_onOffNames[g_camInvertJoystick]);
+            break;
+        case MENU_MSG_VALUE_CHANGED:
+            g_camInvertJoystick ^= 1;
+            Camera_SaveControlSettings();
+            Ui_PlayMoveSound();
             break;
     }
 }
