@@ -4263,7 +4263,7 @@ public:
     u8 state;                                      // GossamerBossState; switch subject of Update and of SetState (0x4507
     u8 prevState;                                  // previous state saved by SetState
     u8 pathIndex;                                  // index into path->pts, advanced by msg 0x43 ( add al,1) and read by the return step (
-    u8 shakeTicks;
+    s16 shakeTicks;                                // remaining game-clock ticks until the shockwave; negative after triggering
     s16 hitIndex;                                  // phase counter: 0xffff at Init/Reset, +1 per msg 0x43 ( add ax,1); indexes phaseBo
     s16 phaseOverlapX;                             // pos.x - phaseBoxes[hitIndex]->max.x when the last phase box is left
     s16 turnAccum;                                 // turn accumulated by TurnStep in 4096ths; compared with turnNeeded

@@ -75,6 +75,7 @@ extern Wolf *g_pWolf;
 
 #define g_camPos (g_camera.pos)
 
+extern s32 g_dt;
 extern s32 g_dtMs;
 #define g_dtMs (*(u32 *)&g_dtMs)     /* cast kept: read here as unsigned, as the original does */
 extern u32 g_gameFlags;
@@ -435,8 +436,11 @@ void Gossamer_Boss::Update()
             }
             break;
         case GOSSBOSS_ST_SHAKE:
-            if (shakeTicks == 0x14 && onde != 0 && onde->HandleMessage(this, MSG_ONDE_START, 0) != 0)
-                Camera_StartShake(0x14, timerLimitMs << 1);
+            if (shakeTicks >= 0) {
+                shakeTicks -= g_dt;
+                if (shakeTicks < 0 && onde != 0 && onde->HandleMessage(this, MSG_ONDE_START, 0) != 0)
+                    Camera_StartShake(0x14, timerLimitMs << 1);
+            }
             if (AnimFlags(ANIM_F_FINISHED)) {
                 timerLimitMs = 500;
                 timerMs = 0;
@@ -448,7 +452,6 @@ void Gossamer_Boss::Update()
                 caughtWolf = 0;
                 break;
             }
-            shakeTicks++;
             break;
         case GOSSBOSS_ST_GUARD:
             SetFacing(HeadingTo(&g_pWolf->pos));
@@ -612,7 +615,8 @@ void Gossamer_Boss::SetState(u8 newState)
         case GOSSBOSS_ST_SHAKE:
             timerMs = 0;
             timerLimitMs = 0x5dc;
-            shakeTicks = 0;
+            // Preserve 20 original fixed steps; crossing below zero keeps the original trigger update.
+            shakeTicks = 20 * 0x88;
             PlayAnim(AGOSSA02_ANIM_SHAKE, 0, 0);
             break;
         case GOSSBOSS_ST_SPIN_END:
