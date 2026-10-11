@@ -1,6 +1,7 @@
 
 #include "sdw_types.h"
 #include "sdw_enums.h"
+#include "mesh.h"
 #include "../sdk/win32.h"
 #include "../sdk/d3d7.h"
 #include "../sdk/ddraw.h"
@@ -135,8 +136,7 @@ class
 #undef SDW_INLINE_D3DAPP_CLEARSTATEFLAGSINLINE_U32
 
 #define g_screenW (g_screen.viewportWidth)
-u32 Outline_MakeEdgeKey(u32 vertA, u32 vertB, u32 faceColor, u32 fogSum, u8 eligible);
-s32 Outline_CompareEdgeKey(const u32 *a, const u32 *b);
+u8 g_meshOutlinesEnabled = 1;
 
 /* ---------------------------------------------------------------- Mesh */
 
@@ -1081,6 +1081,8 @@ void Mesh::Mesh_DrawOutlined(PolyBatcher *batcher, Frustrum *frustrum, float out
                     maxZ_26 = faceMaxZ_3;
                 batcher->SubmitPolyCalls(&faces[i_16]);
             }
+            if (!g_meshOutlinesEnabled)
+                continue;
             g_outlineEdgeKeys[g_cntOutlineEdgeKeys] = Outline_MakeEdgeKey(
                 faces[i_16].poly.idx[0], faces[i_16].poly.idx[1], ((FlatVertex *)faces[i_16].verts)->diffuse,
                 ((fog0_3 >> 16) + (fog1_28 >> 16)) << 15, eligible_12);
@@ -1095,6 +1097,11 @@ void Mesh::Mesh_DrawOutlined(PolyBatcher *batcher, Frustrum *frustrum, float out
             g_cntOutlineEdgeKeys++;
             eligible_12 = 0;
         }
+    }
+
+    if (!g_meshOutlinesEnabled) {
+        vbTransformed->Unlock();
+        return;
     }
 
     memset(g_array_5c9248, 0, sizeof(g_array_5c9248));
@@ -1368,6 +1375,8 @@ void Mesh::Mesh_DrawOutlinedTinted(u32 tintColor, float tintBlend, PolyBatcher *
                     maxZ_26 = faceMaxZ_3;
                 batcher->SubmitPolyCalls(&poly_12);
             }
+            if (!g_meshOutlinesEnabled)
+                continue;
             g_outlineEdgeKeys[g_cntOutlineEdgeKeys] = Outline_MakeEdgeKey(
                 faces[i_16].poly.idx[0], faces[i_16].poly.idx[1], ((FlatVertex *)faces[i_16].verts)->diffuse,
                 ((fog0_3 >> 16) + (fog1_28 >> 16)) << 15, eligible_12);
@@ -1382,6 +1391,11 @@ void Mesh::Mesh_DrawOutlinedTinted(u32 tintColor, float tintBlend, PolyBatcher *
             g_cntOutlineEdgeKeys++;
             eligible_12 = 0;
         }
+    }
+
+    if (!g_meshOutlinesEnabled) {
+        vbTransformed->Unlock();
+        return;
     }
 
     memset(g_array_5c9248, 0, sizeof(g_array_5c9248));

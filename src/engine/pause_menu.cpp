@@ -44,6 +44,8 @@ typedef void (*MenuHandler)(u8 msg, MenuPage *self);
 #include "sfx_volume.h"
 #include "fade.h"
 #include "approach.h"
+#include "mesh.h"
+#include "../platform/save_store.h"
 extern u32 g_gameFlags;
 extern u32 *g_screenLayerBase; /* 2D draw layers: layer n is g_screenLayerBase + n */
 
@@ -75,6 +77,7 @@ s16 g_pauseTextRect[4] = {0};         /* the title / footer text window PauseMen
 u8 g_progressPauseCopy[0x2a] = {
     0}; /* the saved progress record, snapshotted on open; 0x2c bytes with the next two (see the header) */
 u8 g_pauseViewDistance = 0;          /* view distance to restore when the display page is left */
+static u8 g_pauseMeshOutlines = 1;   /* accepted outline setting; Done keeps the preview */
 s16 g_pauseResumeIndex = 0;          /* node index of "resume", where the cursor returns */
 u8 g_menuFooterStyle = 0;            /* which footer the menu draws */
 u8 g_menuFooterStylePrev = 0;        /* last frame's g_menuFooterStyle; nothing reads it */
@@ -156,6 +159,7 @@ void PauseMenu_ItemQuit(u8 msg, MenuPage *item);
 void PauseMenu_QuitConfirm(u8 msg, MenuPage *item);
 void PauseMenu_ItemSoundsEnabled(u8 msg, MenuPage *item);
 void PauseMenu_ItemFog(u8 msg, MenuPage *item);
+static void PauseMenu_ItemMeshOutlines(u8 msg, MenuPage *item);
 void PauseMenu_ItemDisplayDone(u8 msg, MenuPage *item);
 void PauseMenu_ItemControlDevice(u8 msg, MenuPage *item);
 void PauseMenu_ItemCameraSpeed(u8 msg, MenuPage *item);
@@ -223,6 +227,22 @@ inline ProgressOptionBits *Progress_Options()
     return &g_pProgress->optionBits;
 }
 
+static u8 PauseMenu_LoadOutlineSetting()
+{
+    if (!Save_KeyExists("CfgGame"))
+        return 1;
+    SaveKey *key = Save_OpenKey("CfgGame");
+    if (!key)
+        return 1;
+    u8 enabled = 1;
+    unsigned type = 0, size = sizeof(enabled);
+    if (Save_QueryValue(key, "CelShadingOutlines", &type, &enabled, &size) != SAVE_OK ||
+        type != 3 || size != sizeof(enabled) || enabled > 1)
+        enabled = 1;
+    Save_CloseKey(key);
+    return enabled;
+}
+
 /* per-level UI set-up, called once by Load_DAVnWAR: the pause box, the slider cursors' skins, the UI
  * strings the option rows print, and the BSM language mask for the player's language. */
 void Menus_LoadLevelUi()
@@ -230,6 +250,7 @@ void Menus_LoadLevelUi()
     u16 i;
     u8 playerLang;
 
+    g_meshOutlinesEnabled = g_pauseMeshOutlines = PauseMenu_LoadOutlineSetting();
     g_pauseFlag89 = 1;
     g_pauseSlidersShown = 0;
     PauseMenu_SetBox(0x1c0, 0xa0);
@@ -320,6 +341,7 @@ void PauseMenu_Exit()
     DWORD len;
 
     Menu_Close();
+    g_meshOutlinesEnabled = g_pauseMeshOutlines;
     g_pStreamPlayer->Halt();
     g_pStreamPlayer->RestartLevelMusic();
     g_pStreamPlayer->ApplyVolume();
@@ -678,7 +700,7 @@ void PauseMenu_Build()
     Menu_AddItems(sounds, PauseMenu_ItemSpeakerMode, PauseMenu_ItemSoundsEnabled, PauseMenu_ItemSfxVolume,
                   PauseMenu_ItemVoiceVolume, PauseMenu_ItemMusicVolume, PauseMenu_ItemSubTitles,
                   PauseMenu_ItemSoundDone, MENU_END);
-    Menu_AddItems(dispPage, PauseMenu_ItemFog, PauseMenu_ItemDisplayDone, MENU_END);
+    Menu_AddItems(dispPage, PauseMenu_ItemFog, PauseMenu_ItemMeshOutlines, PauseMenu_ItemDisplayDone, MENU_END);
     Menu_AddItems(padPage, PauseMenu_ItemControlDevice, MENU_END);
     bindPage = Menu_AddPage(padPage, (void *)PauseMenu_PageEditConfig, 1);
     Menu_AddItems(padPage, PauseMenu_ItemCameraSpeed, PauseMenu_ItemCameraAcceleration,
@@ -712,6 +734,7 @@ void PauseMenu_PageDisplaySettings(u8 msg, MenuPage *item)
         case MENU_MSG_DRAW_SELECTED:
             Menu_BuildValidateBackFooter();
             g_pProgress->viewDistanceSetting = g_pauseViewDistance;
+            g_meshOutlinesEnabled = g_pauseMeshOutlines;
             t = (float)(0xff - g_pProgress->viewDistanceSetting) / 255.0f;
             g_pViewFrustum->SetViewDistance((1.0f - t) * g_viewDistNear + g_viewDistFar * t, 1);
             break;
@@ -870,7 +893,25 @@ void PauseMenu_ItemFog(u8 msg, MenuPage *item)
     }
 }
 
-/* "done" on the display page: the new view distance is kept. */
+/* Preview mesh outlines using the same Yes/No controls as the other toggles. */
+static void PauseMenu_ItemMeshOutlines(u8 msg, MenuPage *item)
+{
+    switch (msg) {
+        case MENU_MSG_DRAW_SELECTED:
+            Menu_BuildNavFooter();
+            break;
+        case MENU_MSG_DRAW:
+            Menu_Printf(item, TEXTALIGN_LEFT, "Object Outlines");
+            Menu_Printf(item, TEXTALIGN_RIGHT, g_onOffNames[g_meshOutlinesEnabled]);
+            break;
+        case MENU_MSG_VALUE_CHANGED:
+            g_meshOutlinesEnabled ^= 1;
+            Ui_PlayMoveSound();
+            break;
+    }
+}
+
+/* "Done" keeps the display settings and saves the outline preference. */
 void PauseMenu_ItemDisplayDone(u8 msg, MenuPage *item)
 {
     switch (msg) {
@@ -881,11 +922,19 @@ void PauseMenu_ItemDisplayDone(u8 msg, MenuPage *item)
         case MENU_MSG_DRAW:
             Menu_Printf(item, TEXTALIGN_LEFT, Text_GetUiString(UISTR_DONE));
             break;
-        case MENU_MSG_CONFIRM:
+        case MENU_MSG_CONFIRM: {
             g_pauseViewDistance = g_pProgress->viewDistanceSetting;
+            g_pauseMeshOutlines = g_meshOutlinesEnabled;
+            SaveKey *key = Save_OpenKey("CfgGame");
+            if (key) {
+                Save_SetValue(key, "CelShadingOutlines", 3 /* REG_BINARY */,
+                              &g_pauseMeshOutlines, sizeof(g_pauseMeshOutlines));
+                Save_CloseKey(key);
+            }
             Menu_GoBack();
             g_pauseSlidersShown = 1;
             break;
+        }
     }
 }
 
