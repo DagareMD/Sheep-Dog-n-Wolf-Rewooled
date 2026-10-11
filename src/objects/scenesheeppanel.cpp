@@ -131,6 +131,16 @@ void SceneSheepPanel::PostLoadInit()
     camShot = GetPropertyCamera(0);
     sheepBox = GetPropertyBox(8);
     cineId = (u16)GetPropertyU32(4);
+    // A first-time victory still has a countdown pending in Update(). Otherwise,
+    // repair missed countdowns before Reset() selects the counter's display animation.
+    if (g_pProgress->currentLevel == SCENE_HUB && !HasReturnedSheep(g_pProgress->GetLevelIndexA())) {
+        s8 remaining = 0;
+        for (s8 level = SCENE_LVL_00; level <= SCENE_LVL_16; ++level) {
+            if (!g_pProgress->IsLevelDone(level))
+                ++remaining;
+        }
+        g_pProgress->SetSheepToCatch(remaining);
+    }
     Reset();
 }
 
