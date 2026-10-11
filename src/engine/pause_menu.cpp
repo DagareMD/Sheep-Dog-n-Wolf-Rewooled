@@ -332,7 +332,7 @@ void PauseMenu_Open()
     g_inputMgr.ResetEdges();
 }
 
-/* closes the pause menu: restarts the level music, resumes the sounds and the game (clears 0x60, sets
+/* closes the pause menu: preserves the music position, resumes the sounds and the game (clears 0x60, sets
  * 0xc000 unconditionally), starts the level exit / restart fade that was confirmed, restores the saved record and
  * writes the options to the registry key "CfgGame". */
 void PauseMenu_Exit()
@@ -342,8 +342,11 @@ void PauseMenu_Exit()
 
     Menu_Close();
     g_meshOutlinesEnabled = g_pauseMeshOutlines;
-    g_pStreamPlayer->Halt();
-    g_pStreamPlayer->RestartLevelMusic();
+    // Keep the existing music stream unless the sound mode disables it or it needs starting.
+    if (g_pProgress->optionBits.soundMode != SOUNDMODE_ALL)
+        g_pStreamPlayer->Halt();
+    else if (g_pStreamPlayer->state == STREAM_ST_IDLE)
+        g_pStreamPlayer->RestartLevelMusic();
     g_pStreamPlayer->ApplyVolume();
     Sound_ResumeAll();
     Game_ClearFlags(GF_PAUSE_TOGGLE | GF_PAUSED);
