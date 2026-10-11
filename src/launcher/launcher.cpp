@@ -7,9 +7,9 @@
 #include "imgui.h"
 #include "imgui_impl_sdl3.h"
 #include "imgui_impl_sdlrenderer3.h"
-
 #include "../platform/app_icon.h"
 #include "../platform/options.h"
+#include "sdw_banner_png.h" /* g_sdwBannerPng[]: res/banner.png (generated in the build folder) */
 #include "../platform/save_store.h"
 #include "update_check.h"
 
@@ -21,6 +21,7 @@
 #ifndef SDW_REPOSITORY
 #define SDW_REPOSITORY "" /* set by CMakeLists.txt: the GitHub repository the update check asks; "" does not check */
 #endif
+
 #include <string.h>
 #include <algorithm>
 #include <string>
@@ -41,11 +42,11 @@ struct RendererChoice {
 /* in the order the game prefers them (render_select.cpp: Metal first on macOS) */
 static const RendererChoice s_renderers[] = {
 #ifdef SDL_PLATFORM_APPLE
-    {"metal", "Metal", "metal"},
+        {"metal", "Metal", "metal"},
 #endif
-    {"vulkan", "Vulkan", "vulkan"},
+        {"vulkan", "Vulkan", "vulkan"},
 #ifdef SDL_PLATFORM_WINDOWS
-    {"d3d12", "Direct3D 12", "direct3d12"},
+        {"d3d12", "Direct3D 12", "direct3d12"},
 #endif
 };
 
@@ -56,32 +57,47 @@ struct SceneChoice {
     const char *label;
 };
 static const SceneChoice s_scenes[] = {
-    {-1, "Title screen"}, {-2, "Intro"},           {-3, "Hub (level select)"},
-    {0, "Level 0 (Lvl-00)"}, {1, "Level 1 (Lvl-01)"},   {2, "Level 2 (Lvl-02)"},   {3, "Level 3 (Lvl-03)"},
-    {4, "Level 4 (Lvl-04)"}, {5, "Bonus 1 (Lvl-05)"},   {6, "Level 5 (Lvl-06)"},   {7, "Level 6 (Lvl-07)"},
-    {8, "Level 7 (Lvl-08)"}, {9, "Level 8 (Lvl-09)"},   {10, "Bonus 2 (Lvl-10)"},  {11, "Level 9 (Lvl-11)"},
-    {12, "Level 10 (Lvl-12)"}, {13, "Level 11 (Lvl-13)"}, {14, "Level 12 (Lvl-14)"}, {15, "Level 13 (Lvl-15)"},
-    {16, "Level 14 (Lvl-16)"}, {17, "Planet X (Lvl-17)"},
+        {-1, "Title screen"},
+        {-2, "Intro"},
+        {-3, "Hub (level select)"},
+        {0,  "Level 0 (Lvl-00)"},
+        {1,  "Level 1 (Lvl-01)"},
+        {2,  "Level 2 (Lvl-02)"},
+        {3,  "Level 3 (Lvl-03)"},
+        {4,  "Level 4 (Lvl-04)"},
+        {5,  "Bonus 1 (Lvl-05)"},
+        {6,  "Level 5 (Lvl-06)"},
+        {7,  "Level 6 (Lvl-07)"},
+        {8,  "Level 7 (Lvl-08)"},
+        {9,  "Level 8 (Lvl-09)"},
+        {10, "Bonus 2 (Lvl-10)"},
+        {11, "Level 9 (Lvl-11)"},
+        {12, "Level 10 (Lvl-12)"},
+        {13, "Level 11 (Lvl-13)"},
+        {14, "Level 12 (Lvl-14)"},
+        {15, "Level 13 (Lvl-15)"},
+        {16, "Level 14 (Lvl-16)"},
+        {17, "Planet X (Lvl-17)"},
 };
 
 struct Resolution {
     int w, h;
+
     bool operator==(const Resolution &o) const { return w == o.w && h == o.h; }
 };
 
-static std::vector<const RendererChoice *> Launcher_AvailableRenderers()
-{
+static std::vector<const RendererChoice *> Launcher_AvailableRenderers() {
     std::vector<const RendererChoice *> out;
-    const SDL_GPUShaderFormat formats = SDL_GPU_SHADERFORMAT_SPIRV | SDL_GPU_SHADERFORMAT_DXBC | SDL_GPU_SHADERFORMAT_MSL;
-    for (const RendererChoice &r : s_renderers)
+    const SDL_GPUShaderFormat formats =
+            SDL_GPU_SHADERFORMAT_SPIRV | SDL_GPU_SHADERFORMAT_DXBC | SDL_GPU_SHADERFORMAT_MSL;
+    for (const RendererChoice &r: s_renderers)
         if (SDL_GPUSupportsShaderFormats(formats, r.driver))
             out.push_back(&r);
     return out;
 }
 
 /* the primary display's full-screen sizes, largest first, and the saved one */
-static std::vector<Resolution> Launcher_Resolutions(const GameOptions &o)
-{
+static std::vector<Resolution> Launcher_Resolutions(const GameOptions &o) {
     std::vector<Resolution> out;
     int count = 0;
     SDL_DisplayMode **modes = SDL_GetFullscreenDisplayModes(SDL_GetPrimaryDisplay(), &count);
@@ -101,8 +117,7 @@ static std::vector<Resolution> Launcher_Resolutions(const GameOptions &o)
 }
 
 /* Keyboard, then every gamepad SDL sees, in SDL's order (the game opens them by that index: src/platform/platform_sdl.cpp) */
-static std::vector<std::string> Launcher_Controllers()
-{
+static std::vector<std::string> Launcher_Controllers() {
     std::vector<std::string> out;
     out.push_back("Keyboard");
     int count = 0;
@@ -116,8 +131,7 @@ static std::vector<std::string> Launcher_Controllers()
 }
 
 /* removes the saved games and the game's own settings (not the launcher's) */
-static void Launcher_ResetSaves()
-{
+static void Launcher_ResetSaves() {
     Save_DeleteKey("Progress");
     Save_DeleteKey("Config");
     Save_DeleteKey("Setup");
@@ -125,8 +139,7 @@ static void Launcher_ResetSaves()
 }
 
 /* starts the game with o as flags; 1 when it started */
-static int Launcher_StartGame(const GameOptions &o)
-{
+static int Launcher_StartGame(const GameOptions &o) {
     char path[4096];
     char flags[OPTIONS_MAX_ARGS][OPTIONS_ARG_SIZE];
     const char *args[OPTIONS_MAX_ARGS + 2]; /* the exe, the flags, the terminating 0 */
@@ -134,7 +147,7 @@ static int Launcher_StartGame(const GameOptions &o)
     const char *base = SDL_GetBasePath();
     const char *bundle = base ? SDL_strstr(base, ".app/Contents/") : 0;
     if (bundle) /* in the macOS app bundle the game is next to the launcher, in Contents/MacOS (CMakeLists.txt) */
-        snprintf(path, sizeof(path), "%.*sMacOS/%s", (int)(bundle - base + strlen(".app/Contents/")), base,
+        snprintf(path, sizeof(path), "%.*sMacOS/%s", (int) (bundle - base + strlen(".app/Contents/")), base,
                  LAUNCHER_GAME_EXE);
     else
         snprintf(path, sizeof(path), "%s%s", base ? base : "", LAUNCHER_GAME_EXE);
@@ -146,7 +159,7 @@ static int Launcher_StartGame(const GameOptions &o)
     /* detached (its own session, no terminal): started from a terminal or an IDE, the game would otherwise get the
      * terminal's hang-up when the launcher exits a moment later, and die with it */
     SDL_PropertiesID props = SDL_CreateProperties();
-    SDL_SetPointerProperty(props, SDL_PROP_PROCESS_CREATE_ARGS_POINTER, (void *)args);
+    SDL_SetPointerProperty(props, SDL_PROP_PROCESS_CREATE_ARGS_POINTER, (void *) args);
     SDL_SetBooleanProperty(props, SDL_PROP_PROCESS_CREATE_BACKGROUND_BOOLEAN, true);
     SDL_Process *process = SDL_CreateProcessWithProperties(props);
     SDL_DestroyProperties(props);
@@ -167,10 +180,9 @@ static int Launcher_StartGame(const GameOptions &o)
 static Uint32 s_folderPickedEvent;
 static Uint32 s_updateEvent; /* update_check.h: a newer release, data1 an UpdateCheckResult */
 
-static void SDLCALL Launcher_OnFolderPicked(void *userdata, const char *const *filelist, int filter)
-{
-    (void)userdata;
-    (void)filter;
+static void SDLCALL Launcher_OnFolderPicked(void *userdata, const char *const *filelist, int filter) {
+    (void) userdata;
+    (void) filter;
     SDL_Event e;
     SDL_zero(e);
     e.type = s_folderPickedEvent;
@@ -182,8 +194,7 @@ static void SDLCALL Launcher_OnFolderPicked(void *userdata, const char *const *f
 
 /* where the game looks for its data without --game-dir: its own folder, or the folder holding the macOS app bundle
  * (as Platform_GetBasePath, src/platform/platform_sdl.cpp) */
-static std::string Launcher_DefaultGameDir()
-{
+static std::string Launcher_DefaultGameDir() {
     const char *base = SDL_GetBasePath();
     std::string dir = base ? base : "";
     size_t bundle = dir.find(".app/Contents/");
@@ -193,8 +204,7 @@ static std::string Launcher_DefaultGameDir()
 }
 
 /* whether dir holds the game's data: a Levels folder, in any case (a disc may have LEVELS) */
-static bool Launcher_HasGameData(const char *dir)
-{
+static bool Launcher_HasGameData(const char *dir) {
     int count = 0;
     char **found = SDL_GlobDirectory(dir, "levels", SDL_GLOB_CASEINSENSITIVE, &count);
     SDL_free(found);
@@ -202,8 +212,7 @@ static bool Launcher_HasGameData(const char *dir)
 }
 
 /* text cut from the left with "..." so that it fits width */
-static std::string Launcher_FitLeft(const char *text, float width)
-{
+static std::string Launcher_FitLeft(const char *text, float width) {
     std::string s = text;
     if (ImGui::CalcTextSize(s.c_str()).x <= width)
         return s;
@@ -212,10 +221,21 @@ static std::string Launcher_FitLeft(const char *text, float width)
     return "..." + s;
 }
 
-int main(int argc, char **argv)
-{
-    (void)argc;
-    (void)argv;
+/* the banner's height on a window w wide: it fills the width at 16:9 */
+static float Launcher_BannerHeight(float w) {
+    return w * 9.0f / 16.0f;
+}
+
+/* the window has no title bar, so the banner moves it */
+static SDL_HitTestResult Launcher_HitTest(SDL_Window *window, const SDL_Point *point, void *) {
+    int w = 0, h = 0;
+    SDL_GetWindowSize(window, &w, &h);
+    return point->y < Launcher_BannerHeight((float) w) ? SDL_HITTEST_DRAGGABLE : SDL_HITTEST_NORMAL;
+}
+
+int main(int argc, char **argv) {
+    (void) argc;
+    (void) argv;
     if (!SDL_Init(SDL_INIT_VIDEO | SDL_INIT_GAMEPAD)) {
         SDL_ShowSimpleMessageBox(SDL_MESSAGEBOX_ERROR, "Sheep, Dog 'n' Wolf: Rewooled", SDL_GetError(), 0);
         return 1;
@@ -224,13 +244,23 @@ int main(int argc, char **argv)
     SDL_Renderer *renderer;
     s_folderPickedEvent = SDL_RegisterEvents(1);
     s_updateEvent = SDL_RegisterEvents(1);
-    if (!SDL_CreateWindowAndRenderer("Sheep, Dog 'n' Wolf: Rewooled " SDW_VERSION, 460, 372,
-                                     SDL_WINDOW_HIGH_PIXEL_DENSITY, &window, &renderer)) {
+    if (!SDL_CreateWindowAndRenderer("Sheep, Dog 'n' Wolf: Rewooled " SDW_VERSION, 460, 631,
+                                     SDL_WINDOW_HIGH_PIXEL_DENSITY | SDL_WINDOW_BORDERLESS, &window, &renderer)) {
         SDL_ShowSimpleMessageBox(SDL_MESSAGEBOX_ERROR, "Sheep, Dog 'n' Wolf: Rewooled", SDL_GetError(), 0);
         SDL_Quit();
         return 1;
     }
+    SDL_Texture *bannerTexture = nullptr;
+    if (SDL_Surface *banner = SDL_LoadPNG_IO(SDL_IOFromConstMem(g_sdwBannerPng, sizeof(g_sdwBannerPng)), true)) {
+        bannerTexture = SDL_CreateTextureFromSurface(renderer, banner);
+        SDL_DestroySurface(banner);
+    }
+    if (bannerTexture)
+        SDL_SetTextureScaleMode(bannerTexture, SDL_SCALEMODE_LINEAR);
+    else
+        SDL_Log("banner: %s", SDL_GetError());
     SDL_SetRenderVSync(renderer, 1);
+    SDL_SetWindowHitTest(window, Launcher_HitTest, 0);
     App_SetWindowIcon(window);
 
     IMGUI_CHECKVERSION();
@@ -269,14 +299,14 @@ int main(int argc, char **argv)
     int rendererIndex = 0;
     for (size_t i = 0; i < renderers.size(); i++)
         if (strcmp(renderers[i]->name, options.renderer) == 0)
-            rendererIndex = (int)i;
+            rendererIndex = (int) i;
     std::vector<Resolution> resolutions = Launcher_Resolutions(options);
     int resolutionIndex = 0;
     for (size_t i = 0; i < resolutions.size(); i++)
         if (resolutions[i].w == options.width && resolutions[i].h == options.height)
-            resolutionIndex = (int)i;
+            resolutionIndex = (int) i;
     int sceneIndex = 0;
-    for (int i = 0; i < (int)(sizeof(s_scenes) / sizeof(s_scenes[0])); i++)
+    for (int i = 0; i < (int) (sizeof(s_scenes) / sizeof(s_scenes[0])); i++)
         if (s_scenes[i].id == options.startLevel)
             sceneIndex = i;
     bool fullscreen = options.fullscreen != 0;
@@ -291,14 +321,14 @@ int main(int argc, char **argv)
             if (e.type == SDL_EVENT_QUIT || e.type == SDL_EVENT_WINDOW_CLOSE_REQUESTED)
                 running = false;
             if (e.type == s_updateEvent) {
-                update = *(UpdateCheckResult *)e.user.data1;
+                update = *(UpdateCheckResult *) e.user.data1;
                 UpdateCheck_Free(e.user.data1);
                 updateShown = true;
             }
             if (e.type == s_folderPickedEvent) {
                 pickingFolder = false;
                 if (e.user.data1) {
-                    SDL_strlcpy(options.exeDir, (const char *)e.user.data1, sizeof(options.exeDir));
+                    SDL_strlcpy(options.exeDir, (const char *) e.user.data1, sizeof(options.exeDir));
                     SDL_free(e.user.data1);
                     hasGameData = Launcher_HasGameData(options.exeDir);
                 }
@@ -306,7 +336,7 @@ int main(int argc, char **argv)
         }
         std::vector<std::string> controllers = Launcher_Controllers();
         int controllerIndex = options.controller + 1; /* Keyboard is -1 */
-        if (controllerIndex < 0 || controllerIndex >= (int)controllers.size())
+        if (controllerIndex < 0 || controllerIndex >= (int) controllers.size())
             controllerIndex = 0;
 
         ImGui_ImplSDLRenderer3_NewFrame();
@@ -316,7 +346,15 @@ int main(int argc, char **argv)
         ImGui::SetNextWindowSize(io.DisplaySize);
         ImGui::Begin("launcher", 0,
                      ImGuiWindowFlags_NoDecoration | ImGuiWindowFlags_NoMove | ImGuiWindowFlags_NoSavedSettings);
-
+        /* the banner, edge to edge above the padded options */
+        const float bannerHeight = Launcher_BannerHeight(io.DisplaySize.x);
+        if (bannerTexture) {
+            ImDrawList *draw = ImGui::GetWindowDrawList();
+            draw->PushClipRect(ImVec2(0, 0), io.DisplaySize); /* past the window's padding, which clips by default */
+            draw->AddImage((ImTextureID) bannerTexture, ImVec2(0, 0), ImVec2(io.DisplaySize.x, bannerHeight));
+            draw->PopClipRect();
+        }
+        ImGui::SetCursorPosY(bannerHeight + ImGui::GetStyle().WindowPadding.y);
         ImGui::TextUnformatted("Launch Options");
         if (updateShown) { /* "v1.0.8 available  [Download] [x]", on the title's line, at the right */
             char text[64];
@@ -346,8 +384,8 @@ int main(int argc, char **argv)
             ImGui::TextColored(ImVec4(1, 0.4f, 0.4f, 1), "none can run here");
         } else if (ImGui::BeginCombo("##renderer", renderers[rendererIndex]->label)) {
             for (size_t i = 0; i < renderers.size(); i++)
-                if (ImGui::Selectable(renderers[i]->label, (int)i == rendererIndex))
-                    rendererIndex = (int)i;
+                if (ImGui::Selectable(renderers[i]->label, (int) i == rendererIndex))
+                    rendererIndex = (int) i;
             ImGui::EndCombo();
         }
 
@@ -360,8 +398,8 @@ int main(int argc, char **argv)
         if (ImGui::BeginCombo("##resolution", label)) {
             for (size_t i = 0; i < resolutions.size(); i++) {
                 snprintf(label, sizeof(label), "%d x %d", resolutions[i].w, resolutions[i].h);
-                if (ImGui::Selectable(label, (int)i == resolutionIndex))
-                    resolutionIndex = (int)i;
+                if (ImGui::Selectable(label, (int) i == resolutionIndex))
+                    resolutionIndex = (int) i;
             }
             ImGui::EndCombo();
         }
@@ -387,7 +425,8 @@ int main(int argc, char **argv)
             float pathWidth = ImGui::GetContentRegionAvail().x - browseWidth - spacing -
                               (options.exeDir[0] ? resetWidth + spacing : 0.0f);
             std::string shown =
-                options.exeDir[0] ? Launcher_FitLeft(options.exeDir, pathWidth) : std::string("next to the launcher");
+                    options.exeDir[0] ? Launcher_FitLeft(options.exeDir, pathWidth) : std::string(
+                            "next to the launcher");
             ImGui::AlignTextToFramePadding();
             if (options.exeDir[0])
                 ImGui::TextUnformatted(shown.c_str());
@@ -423,24 +462,24 @@ int main(int argc, char **argv)
         ImGui::SetNextItemWidth(-1);
         if (ImGui::BeginCombo("##controller", controllers[controllerIndex].c_str())) {
             for (size_t i = 0; i < controllers.size(); i++)
-                if (ImGui::Selectable(controllers[i].c_str(), (int)i == controllerIndex))
-                    controllerIndex = (int)i;
+                if (ImGui::Selectable(controllers[i].c_str(), (int) i == controllerIndex))
+                    controllerIndex = (int) i;
             ImGui::EndCombo();
         }
         options.controller = controllerIndex - 1;
 
         //if (ImGui::CollapsingHeader("Developer")) {
-            ImGui::AlignTextToFramePadding();
-            ImGui::TextUnformatted("Skip to");
-            ImGui::SameLine(labelWidth);
-            ImGui::SetNextItemWidth(-1);
-            if (ImGui::BeginCombo("##scene", s_scenes[sceneIndex].label)) {
-                for (int i = 0; i < (int)(sizeof(s_scenes) / sizeof(s_scenes[0])); i++)
-                    if (ImGui::Selectable(s_scenes[i].label, i == sceneIndex))
-                        sceneIndex = i;
-                ImGui::EndCombo();
-            }
-       // }
+        ImGui::AlignTextToFramePadding();
+        ImGui::TextUnformatted("Skip to");
+        ImGui::SameLine(labelWidth);
+        ImGui::SetNextItemWidth(-1);
+        if (ImGui::BeginCombo("##scene", s_scenes[sceneIndex].label)) {
+            for (int i = 0; i < (int) (sizeof(s_scenes) / sizeof(s_scenes[0])); i++)
+                if (ImGui::Selectable(s_scenes[i].label, i == sceneIndex))
+                    sceneIndex = i;
+            ImGui::EndCombo();
+        }
+        // }
 
         /* the buttons, on the window's bottom line */
         const float buttonHeight = ImGui::GetFrameHeight();
@@ -498,6 +537,12 @@ int main(int argc, char **argv)
     ImGui_ImplSDLRenderer3_Shutdown();
     ImGui_ImplSDL3_Shutdown();
     ImGui::DestroyContext();
+    if (bannerTexture) {
+
+        SDL_DestroyTexture(bannerTexture);
+
+    }
+
     SDL_DestroyRenderer(renderer);
     SDL_DestroyWindow(window);
     SDL_Quit();
