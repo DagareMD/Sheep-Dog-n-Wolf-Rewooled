@@ -37,6 +37,9 @@ inline HRESULT D3DApp::ShowFrame()
 #include "../engine/fade.h"
 #include "../engine/scenaric.h"
 #include "../engine/progress.h"
+#define SDW_INLINE_PROGRESS_SETLEVELDONE_S8 1
+#include "../engine/progress_inlines.h"
+#undef SDW_INLINE_PROGRESS_SETLEVELDONE_S8
 #include "../engine/debug_draw.h"
 #include "../engine/game_level.h"
 #include "../engine/registry.h"
@@ -272,6 +275,16 @@ s32 App_InitGameSystems()
     g_inputMgr.LoadConfig(g_dirReference);
     g_pProgress->SetField80();
     Progress_ResetGlobal();
+    // Starting directly in a level gives it the preceding story progress.
+    if (g_startLevelId >= SCENE_LVL_00 && g_startLevelId <= SCENE_LVL_17) {
+        for (s8 level = SCENE_LVL_00; level < g_startLevelId; ++level) {
+            if (level == 5 || level == 10) // B1 (Lvl-05) and B2 (Lvl-10) stay incomplete.
+                continue;
+            g_pProgress->SetLevelDone(level);
+            --g_pProgress->sheepToCatch;
+            g_pProgress->slotIcon = level;
+        }
+    }
     ((GameState *)&g_animDt)->Game_ResetState();
     g_pStreamPlayer = NULL;
     g_fmvListIntro.count = 3;
