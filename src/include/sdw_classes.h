@@ -5973,6 +5973,9 @@ public:
     void SetComputeSortZ(u8 enable);
     s32 CreateTexture(const char *fileName, u32 index, u32 width, u32 height, u32 format);
     s32 LoadTexturePages(const char *path);
+    void ConfigureOutlineTexture(const Vdx7Record &rect);
+    void ConfigureOutlineMesh(Mesh *mesh, const u8 *outlineFaces);
+    void UpdateObjectOutlines();
     long Render_RestoreLostSurfaces();
     bool IsImmediateTexture(u32 textureIndex);
     void Render_BeginFrame();
@@ -6003,6 +6006,10 @@ public:
     void *lineBatchVerts;                          // line batch: a fixed 96000-byte buffer = 4000 vertices of 0x18 bytes = 2000 lines, drawn as D3DPT_LIN
     u32 lineBatchCount;                            // lines queued in the line batch; zeroed by the flush and by the discard path of Render_EndFrame
     u32 lineStateFlags;                            // RenderStateFlags for the line batch, 0x121 = RSF_ANTIALIAS | RSF_DITHER | RSF_COLORVERTEX
+    struct OutlineTexture;
+    OutlineTexture *outlineTextures;               // original texels of the explicitly selected outline textures
+    struct OutlineMesh;
+    OutlineMesh *outlineMeshes;                    // non-owning mesh references and their normal/outlined draw counts
 };
 
 class PorkyLevel01 : public ScnMobile {
