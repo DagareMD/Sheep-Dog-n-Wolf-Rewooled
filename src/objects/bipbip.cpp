@@ -134,13 +134,15 @@ void bipbip::PostLoadInit()
     desc.dwCaps = D3DVBCAPS_DONOTCLIP;
     desc.dwFVF = D3DFVF_XYZ;
     desc.dwNumVertices = 2;
-    g_pD3DAppMain->CreateVB(&desc, &g_bipbipVb);
+    if (!g_bipbipVb)
+        g_pD3DAppMain->CreateVB(&desc, &g_bipbipVb);
     memset(&desc, 0, sizeof(desc));
     desc.dwSize = sizeof(desc);
     desc.dwCaps = D3DVBCAPS_DONOTCLIP;
     desc.dwFVF = D3DFVF_XYZRHW;
     desc.dwNumVertices = 2;
-    g_pD3DAppMain->CreateVB(&desc, &g_bipbipVbXf);
+    if (!g_bipbipVbXf)
+        g_pD3DAppMain->CreateVB(&desc, &g_bipbipVbXf);
 }
 
 /* vtable +0x14: waiting again: dust cleared, shadow on, hidden but always updated, back at the start of the

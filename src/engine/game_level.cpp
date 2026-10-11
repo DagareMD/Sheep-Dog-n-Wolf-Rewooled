@@ -70,12 +70,13 @@ inline void D3DApp::ResetStateFlags(u32 flags)
         pD3DDevice->SetRenderState(D3DRENDERSTATE_FOGENABLE, FALSE);
 }
 
-/* frees the loaded level: the pause menu's items, the level data, the level heap and its 512 KB block,
+/* frees the loaded level: both pause menus' items, the level data, the level heap and its 512 KB block,
  * the 32 KB scratch. Nothing happens when no level is loaded. */
 void Game_FreeLevel()
 {
     if (g_pDav) {
         PauseMenu_ClearItems();
+        PausedMenu_ClearItems();
         Load_FreeLevel();
         g_scenaricLevelHeap.Term();
         if (g_levelHeapStorage) {

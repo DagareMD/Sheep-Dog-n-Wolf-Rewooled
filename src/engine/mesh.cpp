@@ -144,12 +144,18 @@ Mesh::Mesh()
 {
     app = 0;
     faces = 0;
+    vbPositions = 0;
+    vbTransformed = 0;
 }
 
 Mesh::~Mesh()
 {
     if (faces && faceCount > 0)
         delete[] faces;
+    if (vbPositions)
+        vbPositions->Release();
+    if (vbTransformed)
+        vbTransformed->Release();
 }
 
 /* Two unused inline functions with an array new. */
