@@ -843,8 +843,8 @@ __forceinline void D3DApp::SetFlagsForceInline(u32 flags)
         pD3DDevice->SetTextureStageState(0, D3DTSS_COLOROP, D3DTOP_SELECTARG1);
     }
     if (flags & RSF_FILTER_LINEAR) {
-        pD3DDevice->SetTextureStageState(0, D3DTSS_MAGFILTER, D3DTFG_LINEAR);
-        pD3DDevice->SetTextureStageState(0, D3DTSS_MINFILTER, D3DTFN_LINEAR);
+        //pD3DDevice->SetTextureStageState(0, D3DTSS_MAGFILTER, D3DTFG_LINEAR);
+        //pD3DDevice->SetTextureStageState(0, D3DTSS_MINFILTER, D3DTFN_LINEAR);
     }
     if (flags & RSF_FOG)
         pD3DDevice->SetRenderState(D3DRENDERSTATE_FOGENABLE, TRUE);

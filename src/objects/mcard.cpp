@@ -393,6 +393,17 @@ inline u32 MCardImageTimestamp()
 
 /* Card_DrawScreen's icon lookup */
 #define ICON(i) ((DavBitmapRec *)g_mcardIconGroups[g_mcardIconGroup[i]][g_mcardIconFrame[i]])
+
+/* the frames found for each icon group (MCard_Init): 0 when the level's DAV has no group holding the icon, as the PSX
+ * release's files, whose memory card icons are laid out differently */
+static u16 s_mcardIconCount[2];
+
+/* whether ICON(i) exists: i a known icon (a saved block's byte may hold anything) whose group has its frame */
+static bool MCard_IconValid(u16 i)
+{
+    return i < sizeof(g_mcardIconGroup) && g_mcardIconGroups[g_mcardIconGroup[i]] &&
+           g_mcardIconFrame[i] < s_mcardIconCount[g_mcardIconGroup[i]];
+}
 /* MCard_UpdateScreen's shorthands */
 #define UI_STRING(id) ((char *)g_pGetUiString(id))
 #define PLAIN(id) Ui_DrawTextInRect(g_mcardRectBody, TEXTALIGN_CENTER, 0, UI_STRING(id))
@@ -444,6 +455,8 @@ void MCard_Init()
         g_mcardPhase = 5;
         g_mcardScreen = MCS_NONE;
         for (w.index = 0; w.index < 2; ++w.index) {
+            g_mcardIconGroups[w.index] = 0; /* not the previous level's, when this one has no such icon */
+            s_mcardIconCount[w.index] = 0;
             w.list = Res_GetValidatedIdList(w.ids[w.index], &w.count);
             if (w.list && w.count) {
                 w.id = (u16 *)*w.list;
@@ -452,6 +465,7 @@ void MCard_Init()
                 g_mcardIconH1 = w.bitmap->height - 1;
                 g_mcardIconReserved[w.index] = 0;
                 g_mcardIconGroups[w.index] = Res_FindBitmapGroup(w.bitmap, &w.groupCount);
+                s_mcardIconCount[w.index] = g_mcardIconGroups[w.index] ? w.groupCount : 0;
             }
         }
         g_mcardFileName = "SdwDatas.BKS";
@@ -722,6 +736,13 @@ void Card_DrawScreen()
         w.icon = 19;
         if (g_cardBlockState[w.index] == 'F')
             w.icon = (s8)g_cardBlocks[w.index][0x10];
+        w.screen[0] = w.index * 80 + g_textWinX;
+        w.screen[1] = g_textWinY;
+        w.screen[2] = 63;
+        w.screen[3] = 31;
+        Ui_DrawRectOutline(w.screen, w.selected == w.index ? 0x4040f0 : 0xb0b0b0);
+        if (!MCard_IconValid(w.icon))
+            continue; /* the slot's frame without its icon */
         w.texture[0] = ICON(w.icon)->u;
         w.texture[1] = ICON(w.icon)->v;
         w.texture[2] = ICON(w.icon)->width - 1;
@@ -730,13 +751,6 @@ void Card_DrawScreen()
         w.right = Tex_CornerUV(w.texture[2], w.texture[2], w.texture[0]);
         w.top = Tex_CornerUV(0, w.texture[3], w.texture[1]);
         w.bottom = Tex_CornerUV(w.texture[3], w.texture[3], w.texture[1]);
-        w.screen[0] = w.index * 80;
-        w.screen[1] = 0;
-        w.screen[2] = 63;
-        w.screen[3] = 31;
-        w.screen[0] += g_textWinX;
-        w.screen[1] += g_textWinY;
-        Ui_DrawRectOutline(w.screen, w.selected == w.index ? 0x4040f0 : 0xb0b0b0);
         Draw2D_TexRect(g_screen.Draw2D_LayerToZ(g_screenLayerBase + 2), g_screen.ScaleX(w.screen[0]),
                        g_screen.ScaleY(w.screen[1]), g_screen.ScaleX(w.screen[0] + w.screen[2]),
                        g_screen.ScaleY(w.screen[1] + w.screen[3]), ICON(w.icon)->page, w.left, w.top, 0xffffff, w.left,

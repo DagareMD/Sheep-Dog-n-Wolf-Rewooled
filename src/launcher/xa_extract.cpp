@@ -10,8 +10,8 @@
 // Output goes to <outputDir>/Musics and <outputDir>/Voices (see XA_OUTPUT_FOLDERS).
 // The level data files (LEVELS/*/*.DAV/.WAR/.SND/.MLT) are copied to <outputDir>/Levels,
 // with the .SND sound banks converted from the PSX to the PC format, and the PC release's
-// text bank the game needs, which the PSX disc has none of, is written to
-// <outputDir>/References/GREET_txt.BSM.
+// text bank and clip bank the game needs, which the PSX disc has none of, are written to
+// <outputDir>/References/GREET_txt.BSM and MusicVoice.BSV.
 //
 // The job runs in two passes over the disc: a counting pass that decodes without
 // writing (so the exact number of files is known up front) and the extraction pass.
@@ -1114,12 +1114,25 @@ const GreetString GREET_STRINGS[] = {
 
 const char* const GREET_PATH = "References/GREET_txt.BSM";
 
+// Writes one of the generated files to <outputDir>/<relPath> and counts it.
+void writeGeneratedFile(ExtractionSettings& s, const char* relPath, const std::vector<uint8_t>& content) {
+    const fs::path outPath = s.outputDir / relPath;
+    ExtractionProgress::setCurrentFile(s, relPath);
+    fs::create_directories(outPath.parent_path());
+    std::ofstream out(outPath, std::ios::binary);
+    if (!out) throw std::runtime_error("Cannot write " + outPath.string());
+    out.write(reinterpret_cast<const char*>(content.data()), std::streamsize(content.size()));
+    out.close();
+    if (out.fail()) throw std::runtime_error("Write error (disk full?)");
+
+    s.filesWritten = s.filesWritten + 1;
+    s.filesLeft = std::max(0, s.filesTotal - s.filesWritten);
+    if (s.log) s.log(std::string("wrote ") + relPath);
+}
+
 // "GREETINGV1.0", the entry count, then per entry its key, its length (with the terminating 0) and its text, all
 // little-endian (src/objects/textresbank.cpp reads it).
 void writeGreetBsm(ExtractionSettings& s) {
-    const fs::path outPath = s.outputDir / GREET_PATH;
-    ExtractionProgress::setCurrentFile(s, GREET_PATH);
-
     std::vector<uint8_t> content;
     const char magic[] = "GREETINGV1.0";
     content.insert(content.end(), magic, magic + 12);
@@ -1130,17 +1143,55 @@ void writeGreetBsm(ExtractionSettings& s) {
         putLe32(content, len);
         content.insert(content.end(), g.text, g.text + len);
     }
+    writeGeneratedFile(s, GREET_PATH, content);
+}
 
-    fs::create_directories(outPath.parent_path());
-    std::ofstream out(outPath, std::ios::binary);
-    if (!out) throw std::runtime_error("Cannot write " + outPath.string());
-    out.write(reinterpret_cast<const char*>(content.data()), std::streamsize(content.size()));
-    out.close();
-    if (out.fail()) throw std::runtime_error("Write error (disk full?)");
+// ---------------------------------------------------------------- References/MusicVoice.BSV
 
-    s.filesWritten = s.filesWritten + 1;
-    s.filesLeft = std::max(0, s.filesTotal - s.filesWritten);
-    if (s.log) s.log(std::string("wrote ") + GREET_PATH);
+// The PC release's clip bank: the game plays music and voice lines by their 1-based position in this list (VOICE_*
+// in sdw_enums.h, g_levelMusicClip), each a file name in Musics/ or Voices/<language>/, the names the extraction gives
+// the PSX tracks it knows (KNOWN_TRACKS). The PSX disc has no such list. The game reads exactly these 116.
+const char* const MUSIC_VOICE_CLIPS[] = {
+    "be_02.wav", "ci_lvl_11_lap01b.wav", "ci_lvl_11_lap02.wav", "ci_lvl_13_cro01.wav", "ci_lvl_13_cro02.wav",
+    "ci_lvl13_comb_01.wav", "cin_04_sc_ret_01.wav", "cin_goal_01.wav", "cin_lvl_0101.wav", "cin_lvl_0102.wav",
+    "cin_lvl_0103.wav", "cin_lvl_0104.wav", "cin_lvl_0105.wav", "cin_lvl_0201.wav", "cin_lvl_0202.wav",
+    "cin_lvl_0203.wav", "cin_lvl_0204.wav", "cin_lvl_0205.wav", "cin_lvl_0206.wav", "cin_lvl_0207.wav",
+    "cin_lvl_0208.wav", "cin_lvl_0209.wav", "cin_lvl_0210.wav", "cin_lvl_0211b.wav", "cin_lvl_0212.wav",
+    "cin_lvl_0301.wav", "cin_lvl_0302.wav", "cin_lvl_0303.wav", "cin_lvl_0304.wav", "cin_lvl_0307.wav",
+    "cin_lvl_0308.wav", "cin_lvl_0309.wav", "cin_lvl_0310.wav", "cin_lvl_0311.wav", "cin_lvl_17_ob02a.wav",
+    "cin_lvl_17_ob03a.wav", "cin_lvl_17_ob04a.wav", "cin_lvl0601.wav", "cin_lvl1401_gb.wav", "cin_lvl1402_ja.wav",
+    "cin_lvl1403_gbb.wav", "cin_lvl1404_ja.wav", "cin_lvl1601.wav", "cin_lvl1602.wav", "cin_mar_01.wav",
+    "Cin02_sc_reL002.wav", "Cin02_sc_reL004.wav", "Cin02_sc_reL005.wav", "Cin02_sc_reL006.wav",
+    "cinfe_lvl_0101.wav", "cinfe_lvl_0102.wav", "cinfl_lvl0401.wav", "cinfl_lvl0402.wav", "cingr_lvl0801.wav",
+    "cingr_lvl0802.wav", "cinsa_lvl1501.wav", "cinsa_lvl1502.wav", "cinsa_lvl1503.wav", "cintxt_lvl_0103.wav",
+    "cintxt_lvl_0104.wav", "cintxt_lvl_0105.wav", "cintxt_lvl1603.wav", "cintxt_lvl1604.wav", "cintxt_lvl1605.wav",
+    "cintxtex_lvl_0106.wav", "fin1_2sec.wav", "fin2_2sec.wav", "intro_2sec.wav", "Mars_2sec.wav", "re_niv_04ge.wav",
+    "re_niv_05qu.wav", "ret_lvl_00.wav", "ret_niv_00a.wav", "ret_niv_01.wav", "ret_niv_02ge.wav",
+    "ret_niv_03ge.wav", "sc_01.wav", "sc_02.wav", "sc_03.wav", "txt_lvl_001.wav", "txt_lvl_0010.wav",
+    "txt_lvl_0011.wav", "txt_lvl_0012.wav", "txt_lvl_0013.wav", "txt_lvl_0014.wav", "txt_lvl_0015.wav",
+    "txt_lvl_0016.wav", "txt_lvl_002.wav", "txt_lvl_003.wav", "txt_lvl_004.wav", "txt_lvl_005.wav",
+    "txt_lvl_006.wav", "txt_lvl_007.wav", "txt_lvl_008.wav", "txt_lvl_009.wav", "txt_lvl0602.wav",
+    "txt_lvl0603.wav", "txt_lvl0604.wav", "txt_rob_01.wav", "txt_rob_02.wav", "txt_rob_03.wav", "txtel_lvl1101.wav",
+    "txtel_lvl1102.wav", "DNBASS_v2.wav", "FRONZYLAST_v3.wav", "JAMI Full.wav", "JAZZ90_v3.wav", "Jungle_v1.wav",
+    "JUNGLERHODES01_v2.wav", "JUNGLETUTORIAL_v2.wav", "Luney_v2.wav", "Mix Jami_v2.wav", "NEWS1LAST_v2.wav",
+    "ROAD MARECAGE_v2.wav", "Trip_v1.wav", "Zilla_v2.wav",
+};
+static_assert(std::size(MUSIC_VOICE_CLIPS) == 116, "StreamPlayer::Load_MusicVoiceBank reads 116 entries");
+
+const char* const MUSIC_VOICE_PATH = "References/MusicVoice.BSV";
+
+// "BSV_FILEV2.5", then per clip its name's length (with the terminating 0) and the name, little-endian
+// (src/engine/stream_player.cpp reads it).
+void writeMusicVoiceBsv(ExtractionSettings& s) {
+    std::vector<uint8_t> content;
+    const char magic[] = "BSV_FILEV2.5";
+    content.insert(content.end(), magic, magic + 12);
+    for (const char* name : MUSIC_VOICE_CLIPS) {
+        const uint32_t len = uint32_t(std::strlen(name)) + 1;
+        putLe32(content, len);
+        content.insert(content.end(), name, name + len);
+    }
+    writeGeneratedFile(s, MUSIC_VOICE_PATH, content);
 }
 
 // ---------------------------------------------------------------- PC release
@@ -1269,7 +1320,7 @@ bool extractXaAudio(ExtractionSettings* settings) {
 
         Pass counting{s, s.outputDir, true};
         if (!runPass(disc, jobs, counting, sectorsTotal)) return cancelled();
-        s.filesTotal = counting.filesDone + int(levelJobs.size()) + 1; // + References/GREET_txt.BSM
+        s.filesTotal = counting.filesDone + int(levelJobs.size()) + 2; // + GREET_txt.BSM and MusicVoice.BSV
         s.filesLeft = s.filesTotal.load();
 
         s.status = ExtractionStatus::Extracting;
@@ -1281,6 +1332,7 @@ bool extractXaAudio(ExtractionSettings* settings) {
         for (const LevelJob& job : levelJobs)
             if (!copyLevelFile(disc, job, s, levelSectorsDone, levelSectorsTotal)) return cancelled();
         writeGreetBsm(s);
+        writeMusicVoiceBsv(s);
     } catch (const std::exception& e) {
         return fail(e.what());
     }

@@ -79,7 +79,8 @@ private:
 
 // Installs the game from a disc image into outputDir. The PC release (no .XA files on the disc):
 // its game folders copied. The PSX release: every .XA file extracted to WAV, the level data files
-// copied (sound banks converted to the PC format) and References/GREET_txt.BSM written.
+// copied (sound banks converted to the PC format), and References/GREET_txt.BSM and
+// References/MusicVoice.BSV written.
 // Blocks until finished, cancelled or failed; run it on a worker thread.
 // Returns true when status is Done.
 bool extractXaAudio(ExtractionSettings* settings);
