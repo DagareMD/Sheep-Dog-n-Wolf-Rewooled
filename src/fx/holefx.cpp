@@ -161,6 +161,7 @@ HoleFX::HoleFX()
     app = 0;
     viewport = 0;
     vertexBuffer = 0;
+    captureSurface = 0;
     maskTexture = 0;
 }
 
@@ -189,11 +190,17 @@ void HoleFX::Init(D3DApp *app, void *viewport, float radius, u8 useCubicBezier)
     pos[1] = this->viewport->viewportHeight / 2.0f;
     pos[2] = this->viewport->nearZ;
     captured = 0;
+    /* Each level load creates a fresh capture texture; release the previous one before replacing it. */
+    if (captureSurface) {
+        g_renderDevice->ReleaseTexture(captureSurface);
+        captureSurface = 0;
+    }
     if (g_renderDevice->CreateFrameCaptureTexture((s32)this->viewport->viewportWidth,
                                                   (s32)this->viewport->viewportHeight, &captureSurface, &captureWidth,
                                                   &captureHeight) < 0) {
         hasCaptureSurface = HOLEFX_MASK;
-        maskTexture = new Texture(this->app, 0x100, 0x100, TEXFMT_ARGB4444, &result);
+        if (!maskTexture)
+            maskTexture = new Texture(this->app, 0x100, 0x100, TEXFMT_ARGB4444, &result);
         BuildCircleMask();
         screenRadius = sqrt(this->viewport->viewportWidth * this->viewport->viewportWidth / 4.0 +
                             this->viewport->viewportHeight * this->viewport->viewportHeight / 4.0);

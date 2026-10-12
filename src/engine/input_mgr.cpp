@@ -6,7 +6,7 @@
  *
  * The manager owns up to three DirectInput devices (keyboard +0x14, joystick +0x18, mouse +0x1c; device index 1 / 2 /
  * 4) and two binding tables of 16 {device, button} pairs: +0x30 for the pad (joystick or mouse) and +0xb0 for the
- * keyboard; +0x28 points at the one in use. InputMgr_Poll also derives the keyboard edges (Esc, Enter, Pause / P) and
+ * keyboard; +0x28 points at the one in use. InputMgr_Poll also derives the menu edges (Esc/Start, Enter, Pause / P) and
  * the arrow-key menu word with auto-repeat. The tables are saved as "BlackSheep Controller Config" V2.0 blobs, in the
  * registry (HKLM\...\Config\UserConf, KeybConf) or in .BSC files (the DefPConf / DefKConf defaults).
  *
@@ -61,6 +61,7 @@ DWORD Reg_ReadBinary(HKEY key, const char *name, void *buf, DWORD bufSize);
 u8 Reg_WriteBinary(HKEY key, const char *name, const void *data, DWORD size);
 
 #include "draw2d.h"
+#include "../objects/camera.h"
 extern s32 g_dtRawMs;
 
 /* A keyboard key the bindings may not take (Pause, P, Enter, Esc). Written as a conditional expression: its value is
@@ -182,15 +183,16 @@ void InputMgr::SetAxisCalibration(float sx, float sy, float sz, float ox, float 
     current->SetAxisCalibration(sx, sy, sz, ox, oy, oz);
 }
 
-/* binds pad slot 0..11 of the current table to a button of a device; a reserved key on the keyboard and a
- * code past the device's button count are refused. */
+/* binds pad slot 0..11 of the current table to a button of a device; reserved keyboard keys, controller Start and
+ * a code past the device's button count are refused. */
 u8 InputMgr::BindAction(u8 slot, u8 devIdx, u16 code)
 {
     InputDevice *dev = DeviceFromIndex(devIdx);
     if (bindings == padTable)
         return 0; /* the controller's buttons are fixed (ApplyFixedPadMapping): the controls menu cannot rebind them */
     if (dev) {
-        if ((!DIK_IS_RESERVED(code) || dev != keyboard) && slot < 12 && code < dev->buttonCount) {
+        if ((!DIK_IS_RESERVED(code) || dev != keyboard) && !(dev == joystick && code == INPUT_BIND_START) &&
+            slot < 12 && code < dev->buttonCount) {
             bindings[slot].dev = dev;
             bindings[slot].code = code;
             return 1;
@@ -359,13 +361,21 @@ static u8 InputMgr_StickByte(float axis)
 long InputMgr::Poll()
 {
     u16 nav;
+    u8 escDown;
     if (CheckDevices() == 1) {
+        escDown = keyboard->buttonPressed[DIK_ESCAPE];
+        if (joystick && joystick->buttonCount > INPUT_BIND_START) {
+            /* Read held state so opening a menu (allowHeld = 0) cannot retrigger Start as Esc. */
+            if (current == joystick && joystick->buttonDown[INPUT_BIND_START] &&
+                !joystick->buttonBlocked[INPUT_BIND_START])
+                escDown = 1;
+        }
         padBits = 0xffff;
         rightX = rightY = 0x80; /* centred unless an analog device has a right stick */
         if (current->isDigital == 0) {
             axisX = (u8)(s32)(current->axisX * 128.0f) + 0x80;
             axisY = (u8)(s32)(current->axisY * 128.0f) + 0x80;
-            rightX = InputMgr_StickByte(current->axisRX);
+            rightX = InputMgr_StickByte(g_camInvertJoystick ? -current->axisRX : current->axisRX);
             rightY = InputMgr_StickByte(current->axisRY);
         } else {
             axisX = 0x80;
@@ -406,12 +416,12 @@ long InputMgr::Poll()
                 padBits &= (u16)~PAD_R3; /* R3 */
         }
         nav = PAD_ALL_RELEASED;
-        escPressed = !escPrev && keyboard->buttonPressed[DIK_ESCAPE] ? 1 : 0;
+        escPressed = !escPrev && escDown ? 1 : 0;
         enterPressed = !enterPrev && keyboard->buttonPressed[DIK_RETURN] ? 1 : 0;
         pausePressed = !pausePrev && (keyboard->buttonPressed[DIK_PAUSE] || keyboard->buttonPressed[DIK_P]) ? 1 : 0;
         if (enterPressed == 1)
             enterPressed = 1;
-        escPrev = keyboard->buttonPressed[DIK_ESCAPE];
+        escPrev = escDown;
         enterPrev = keyboard->buttonPressed[DIK_RETURN];
         pausePrev = keyboard->buttonPressed[DIK_PAUSE] || keyboard->buttonPressed[DIK_P] ? 1 : 0;
         if (keyboard->buttonPressed[DIK_UP] == 1)
@@ -831,21 +841,25 @@ u8 InputMgr::FindBindingByIndex(const InputBindingIdx *b)
     return slot;
 }
 
-/* a keyboard binding to Pause, P, Enter or Esc. */
+/* a keyboard binding to Pause, P, Enter or Esc, or controller Start. */
 u8 InputMgr::IsReservedKeyBinding(const InputBinding *b)
 {
     u8 reserved = 0;
     if (b->dev == keyboard)
         reserved = DIK_IS_RESERVED(b->code);
+    else if (b->dev == joystick)
+        reserved = b->code == INPUT_BIND_START;
     return reserved;
 }
 
-/* the same by device index (1 = keyboard). */
+/* the same by device index. */
 u8 InputMgr::IsReservedKey(const InputBindingIdx *b)
 {
     u8 reserved = 0;
     if (b->devIdx == INPUTDEV_MASK_KEYBOARD)
         reserved = DIK_IS_RESERVED(b->code);
+    else if (b->devIdx == INPUTDEV_MASK_JOYSTICK)
+        reserved = b->code == INPUT_BIND_START;
     return reserved;
 }
 

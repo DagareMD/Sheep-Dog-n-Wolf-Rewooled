@@ -27,10 +27,11 @@ s32 g_frameCount2 = 0;     /* only read by two HUD blink functions              
 extern u32 g_gameFlags; /* bit 0x40 = paused                                      */
 #include "game_state.h"
 
-/* on every level load (its one caller is Load_DAVnWAR). Builds and stops a new gameplay Timer (so the first
- * Time_Update delta is 0) and zeroes the clock; the previous Timer is not deleted. */
+/* on every level load (its one caller is Load_DAVnWAR). Replaces and stops the gameplay Timer (so the first
+ * Time_Update delta is 0) and zeroes the clock. */
 void Time_Init()
 {
+    delete g_pTimer;
     g_pTimer = new Timer;
     g_pTimer->Stop();
     g_timeScale = 0x1000;

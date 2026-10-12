@@ -18,6 +18,7 @@ extern Wolf *g_pWolf;
 #include "../engine/scn_tools.h"
 #include "../engine/interface.h"
 #include "camera.h"
+#include "../engine/time.h"
 
 #define g_padCurButtons (g_pad.cur.buttons)
 
@@ -100,35 +101,35 @@ s32 Telescope::UpdateView(Pad *pad)
         if (e > 100) {
             e -= 100;
             if (yawOffset > -maxHorAngle)
-                yawOffset -= (s16)(e / 10);
+                yawOffset += (s16)Time_ScaleStep(-(e / 10), yawRemainder);
         } else if (e < -100) {
             e += 100;
             if (yawOffset < maxHorAngle)
-                yawOffset += (s16)(-e / 10);
+                yawOffset += (s16)Time_ScaleStep(-e / 10, yawRemainder);
         }
         if (b < -100) {
             b += 100;
             if (pitchOffset > -maxVertAngle)
-                pitchOffset -= (s16)(-b / 10);
+                pitchOffset += (s16)Time_ScaleStep(b / 10, pitchRemainder);
         } else if (b > 100) {
             b -= 100;
             if (pitchOffset < maxVertAngle)
-                pitchOffset += (s16)(b / 10);
+                pitchOffset += (s16)Time_ScaleStep(b / 10, pitchRemainder);
         }
     } else {
         if (!(pad->cur.buttons & ~g_inputMap[INPUT_SLOT_RIGHT])) {
             if (yawOffset > -maxHorAngle)
-                yawOffset -= 10;
+                yawOffset += (s16)Time_ScaleStep(-10, yawRemainder);
         } else if (!(pad->cur.buttons & ~g_inputMap[INPUT_SLOT_LEFT])) {
             if (yawOffset < maxHorAngle)
-                yawOffset += 10;
+                yawOffset += (s16)Time_ScaleStep(10, yawRemainder);
         }
         if (!(pad->cur.buttons & ~g_inputMap[INPUT_SLOT_DOWN])) {
             if (pitchOffset < maxVertAngle)
-                pitchOffset += 10;
+                pitchOffset += (s16)Time_ScaleStep(10, pitchRemainder);
         } else if (!(pad->cur.buttons & ~g_inputMap[INPUT_SLOT_UP])) {
             if (pitchOffset > -maxVertAngle)
-                pitchOffset -= 10;
+                pitchOffset += (s16)Time_ScaleStep(-10, pitchRemainder);
         }
     }
     /* Original word loads zero-extend these two base angles. */
@@ -161,6 +162,7 @@ sptr Telescope::HandleMessage(ScnObject *sender, u32 message, void *)
     Mat34s d;
     switch (message) {
         case MSG_USE:
+            yawRemainder = pitchRemainder = 0;
             eye = pos;
             c = rot;
             a.x = initVertAngle;

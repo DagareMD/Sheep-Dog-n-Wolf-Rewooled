@@ -25,6 +25,7 @@ extern Wolf *g_pWolf;
 #include "../engine/scn_tools.h"
 #include "camera.h"
 #include "../engine/interface.h"
+#include "../engine/time.h"
 extern s32 g_dtMs;
 extern u32 *g_screenLayerBase;
 
@@ -187,6 +188,7 @@ void CanonSimple::SetState(u8 next)
             barrel->SetVisible(1);
             break;
         case CS_ST_AIM:
+            pitchRemainder = yawRemainder = 0;
             ball->HandleMessage(this, MSG_CB_SET_LETHAL, 0);
             g_pWolf->HandleMessage(this, MSG_FREEZE, 0);
             csFlags |= CSF_WOLF_FROZEN;
@@ -340,7 +342,7 @@ void CanonSimple::UpdateAim(Pad *pad)
 }
 void CanonSimple::AddAimOffset(s16 *offset, s16 step, u8 axis)
 {
-    *offset += step;
+    *offset += (s16)Time_ScaleStep(step, axis == CS_AIM_PITCH ? pitchRemainder : yawRemainder);
     switch (axis) {
         case CS_AIM_PITCH:
             if (*offset > 40)

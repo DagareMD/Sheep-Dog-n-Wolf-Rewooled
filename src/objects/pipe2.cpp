@@ -2,6 +2,7 @@
 #include "sdw_types.h"
 #include "sdw_enums.h"
 #include "scenaric_props.h"
+#include "../engine/time.h"
 class Instance;
 struct Animator;
 u32 Anim_Start(Instance *inst, Animator *animator, u16 id, u32 opts);
@@ -199,10 +200,13 @@ void Pipe2::Update()
         }
     }
     switch (pipeState) {
-        case PIPE2_ST_SPIN_RESET:
+        case PIPE2_ST_SPIN_RESET: {
+            s32 step = Time_ScaleStep(0x20, spinRemainder);
+            if (step > 0x400 - spinAngle)
+                step = 0x400 - spinAngle;
             s = rot;
-            s.y = s.y + 0x20;
-            spinAngle = spinAngle + 0x20;
+            s.y = s.y + step;
+            spinAngle = spinAngle + step;
             if (spinAngle == 0x400) {
                 if (wolfFrozen) {
                     g_pWolf->HandleMessage(this, MSG_UNFREEZE, 0);
@@ -212,6 +216,7 @@ void Pipe2::Update()
             }
             rot = s;
             break;
+        }
         case PIPE2_ST_INIT_MOUTHS:
             MoveBoxWithSpin(mouths[0], turnOffset1, turnPivot, 0x400);
             MoveBoxWithSpin(mouths[1], turnOffset2, turnPivot, 0x400);
@@ -274,6 +279,7 @@ void Pipe2::SetState(u8 newState)
             break;
         case PIPE2_ST_SPIN_RESET:
             spinAngle = 0;
+            spinRemainder = 0;
             unk116 = 0;
             break;
         case PIPE2_ST_INIT_MOUTHS:

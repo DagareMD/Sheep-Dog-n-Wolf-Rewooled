@@ -13,6 +13,7 @@
 
 #include "draw2d.h"
 #include "tex_table.h"
+#include "../sdk/crt.h"
 
 #define WAR_RES_TYPE(e) ((e) >> 24 & 0xff)
 #define WAR_RES_OFFSET(e) ((e) & 0xffffff)
@@ -55,12 +56,115 @@ float Tex_CornerUV(u32 offset, s32 size, s32 base)
 
 /* ----: the mesh pass ---- */
 
+/* Resolve actor names through each WAR's directory; resource indices are local to the file. */
+static s32 Load_FindNamedModel(BsFile *file, const char *modelName)
+{
+    if (!file->ok)
+        return -1;
+    file->FindFrameOfType(WAR_RES_ANIM_NAMES);
+    if (file->frameType != WAR_RES_ANIM_NAMES)
+        return -1;
+    u16 modelCount = file->ReadU16(1);
+    while (modelCount--) {
+        u16 resource = file->ReadU16(1);
+        u16 animCount = file->ReadU16(1);
+        const char *name = (const char *)file->data + file->cursor;
+        if (!strcmp(name, modelName))
+            return resource;
+        file->cursor += (strlen(name) + 2) & ~1;
+        while (animCount--) {
+            file->ReadU16(1);
+            name = (const char *)file->data + file->cursor;
+            file->cursor += (strlen(name) + 2) & ~1;
+        }
+    }
+    return -1;
+}
+
+/* Resolve only the selected tail joints' materials through the level's DAV directory. */
+static void Load_OutlineTextures(BsFile *file, const Model *model, u32 cutoutJoints)
+{
+    u8 selectedVertices[256] = {};
+    u32 firstVertex = 0;
+    for (u32 joint = 1; joint < model->nbJoints; ++joint) {
+        u32 endVertex = firstVertex + model->joints[joint].vertexCount;
+        if (endVertex > 256)
+            return;
+        for (u32 vertex = firstVertex; vertex < endVertex; ++vertex)
+            selectedVertices[vertex] = (cutoutJoints & (1u << joint)) != 0;
+        firstVertex = endVertex;
+    }
+    file->cursor += 4;
+    u32 entries = file->ReadU32(1);
+    file->ReadU16(1); /* vertex count */
+    u16 groupCount = file->ReadU16(1);
+    file->cursor = entries;
+    while (groupCount--) {
+        s32 groupStart = file->cursor;
+        u16 kind = file->ReadU16(1);
+        u16 count = file->ReadU16(1);
+        if (kind == BS_ENTRY_FT3) {
+            while (count--) {
+                s32 faceStart = file->cursor;
+                bool selected = false;
+                for (u32 corner = 0; corner < 3; ++corner) {
+                    u8 vertex = file->ReadU8(1);
+                    selected |= selectedVertices[vertex] != 0;
+                }
+                file->cursor = faceStart + 12;
+                u32 material = file->ReadU32(1);
+                if (selected)
+                    g_pPolyBin->ConfigureOutlineTexture(file->vdx->records[file->vdx->entries[material]]);
+                file->cursor = faceStart + 24;
+            }
+        }
+        file->cursor = groupStart;
+        file->SkipEntry();
+    }
+}
+
+/* Ralph's hand borders are twelve untextured black G3 triangles, distinct from the two finger-line
+ * textures. Select only solid-black faces entirely in the hand joints (17 and 21). */
+static void Load_RalphHandOutlines(Mesh *mesh, const Model *model)
+{
+    struct FlatVertex {
+        float x, y, z, rhw;
+        u32 color, specular;
+    };
+    u8 handVertices[256] = {};
+    u32 firstVertex = 0;
+    for (u32 joint = 1; joint < model->nbJoints; ++joint) {
+        u32 endVertex = firstVertex + model->joints[joint].vertexCount;
+        if (endVertex > 256)
+            return;
+        for (u32 vertex = firstVertex; vertex < endVertex; ++vertex)
+            handVertices[vertex] = joint == 17 || joint == 21;
+        firstVertex = endVertex;
+    }
+    u8 *outlineFaces = new u8[mesh->faceCount];
+    for (u32 i = 0; i < mesh->faceCount; ++i) {
+        const RenderPoly &face = mesh->faces[i];
+        bool outline = face.type == RPOLY_OPAQUE;
+        if (outline) {
+            const FlatVertex *vertices = (const FlatVertex *)face.verts;
+            for (u32 corner = 0; corner < 3; ++corner)
+                outline &= face.poly.idx[corner] < 256 && handVertices[face.poly.idx[corner]] &&
+                           !(vertices[corner].color & 0x00ffffff);
+        }
+        outlineFaces[i] = outline;
+    }
+    g_pPolyBin->ConfigureOutlineMesh(mesh, outlineFaces);
+    delete[] outlineFaces;
+}
+
 int Load_WarMeshes(const char *path, WarFile *war)
 {
     u32 i;
     BsFile *bsFile;
 
     bsFile = new BsFile(path);
+    s32 ralphModel = Load_FindNamedModel(bsFile, "ACOYOT01");
+    s32 samModel = Load_FindNamedModel(bsFile, "ASAMSH01");
     bsFile->FirstFrame();
     g_texCount = 0;
     for (i = 0; i < war->header->resourceCount; i++) {
@@ -71,12 +175,25 @@ int Load_WarMeshes(const char *path, WarFile *war)
             case WAR_RES_MESH:
             case WAR_RES_MODEL:
             case WAR_RES_MESH_B:
-            case WAR_RES_SKY:
+            case WAR_RES_SKY: {
+                const Model *ralph = 0;
+                if (((s32)i == ralphModel || (s32)i == samModel) && bsFile->frameType == WAR_RES_MODEL) {
+                    s32 cursor = bsFile->cursor;
+                    const Model *model = (const Model *)(war->blob + WAR_RES_OFFSET(war->table[i]));
+                    if ((s32)i == ralphModel && model->nbJoints == 31) {
+                        ralph = model;
+                        Load_OutlineTextures(bsFile, model, 1u << 30);
+                    } else if ((s32)i == samModel && model->nbJoints == 29)
+                        Load_OutlineTextures(bsFile, model, 1u << 8);
+                    bsFile->cursor = cursor;
+                }
                 g_texObjects[g_texCount] = new Mesh;
-                g_texObjects[g_texCount]->BuildFromBsFile(g_pD3DAppMain, bsFile);
+                if (g_texObjects[g_texCount]->BuildFromBsFile(g_pD3DAppMain, bsFile) && ralph)
+                    Load_RalphHandOutlines(g_texObjects[g_texCount], ralph);
                 g_texKeys[g_texCount] = WAR_RES_OFFSET(war->table[i]) + (uptr)war->blob;
                 g_texCount++;
                 break;
+            }
             case WAR_RES_SCENARIC:
             case WAR_RES_TYPE_8:
             case WAR_RES_TYPE_9:

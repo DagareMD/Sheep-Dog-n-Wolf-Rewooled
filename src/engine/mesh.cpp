@@ -1,6 +1,7 @@
 
 #include "sdw_types.h"
 #include "sdw_enums.h"
+#include "mesh.h"
 #include "../sdk/win32.h"
 #include "../sdk/d3d7.h"
 #include "../sdk/ddraw.h"
@@ -135,8 +136,7 @@ class
 #undef SDW_INLINE_D3DAPP_CLEARSTATEFLAGSINLINE_U32
 
 #define g_screenW (g_screen.viewportWidth)
-u32 Outline_MakeEdgeKey(u32 vertA, u32 vertB, u32 faceColor, u32 fogSum, u8 eligible);
-s32 Outline_CompareEdgeKey(const u32 *a, const u32 *b);
+u8 g_meshOutlinesEnabled = 1;
 
 /* ---------------------------------------------------------------- Mesh */
 
@@ -144,12 +144,18 @@ Mesh::Mesh()
 {
     app = 0;
     faces = 0;
+    vbPositions = 0;
+    vbTransformed = 0;
 }
 
 Mesh::~Mesh()
 {
     if (faces && faceCount > 0)
         delete[] faces;
+    if (vbPositions)
+        vbPositions->Release();
+    if (vbTransformed)
+        vbTransformed->Release();
 }
 
 /* Two unused inline functions with an array new. */
@@ -1031,8 +1037,12 @@ void Mesh::Mesh_DrawOutlined(PolyBatcher *batcher, Frustrum *frustrum, float out
         v0_28 = verts_4 + faces[i_16].poly.idx[0];
         v1_17 = verts_4 + faces[i_16].poly.idx[1];
         v2_16 = verts_4 + faces[i_16].poly.idx[2];
+        /* Round both products separately: fusing the subtraction can give a collapsed shadow-box face a
+         * nonzero area, changing which edges receive outlines as the camera moves. */
+        const volatile float areaProduct0 = (v1_17->x - v0_28->x) * (v2_16->y - v0_28->y);
+        const volatile float areaProduct1 = (v1_17->y - v0_28->y) * (v2_16->x - v0_28->x);
         if ((v0_28->z > 1.0f) ^ (v1_17->z > 1.0f) ^ (v2_16->z > 1.0f) ^ (flip_19 == 1) ^
-            ((v1_17->x - v0_28->x) * (v2_16->y - v0_28->y) - (v1_17->y - v0_28->y) * (v2_16->x - v0_28->x) <= 0.0f)) {
+            (areaProduct0 - areaProduct1 <= 0.0f)) {
             if ((v0_28->rhw > invFar_14 || v1_17->rhw > invFar_14 || v2_16->rhw > invFar_14) &&
                 (v0_28->z >= 0.0f || v1_17->z >= 0.0f || v2_16->z >= 0.0f) &&
                 (v0_28->x < viewW_37 || v1_17->x < viewW_37 || v2_16->x < viewW_37) &&
@@ -1071,6 +1081,8 @@ void Mesh::Mesh_DrawOutlined(PolyBatcher *batcher, Frustrum *frustrum, float out
                     maxZ_26 = faceMaxZ_3;
                 batcher->SubmitPolyCalls(&faces[i_16]);
             }
+            if (!g_meshOutlinesEnabled)
+                continue;
             g_outlineEdgeKeys[g_cntOutlineEdgeKeys] = Outline_MakeEdgeKey(
                 faces[i_16].poly.idx[0], faces[i_16].poly.idx[1], ((FlatVertex *)faces[i_16].verts)->diffuse,
                 ((fog0_3 >> 16) + (fog1_28 >> 16)) << 15, eligible_12);
@@ -1085,6 +1097,11 @@ void Mesh::Mesh_DrawOutlined(PolyBatcher *batcher, Frustrum *frustrum, float out
             g_cntOutlineEdgeKeys++;
             eligible_12 = 0;
         }
+    }
+
+    if (!g_meshOutlinesEnabled) {
+        vbTransformed->Unlock();
+        return;
     }
 
     memset(g_array_5c9248, 0, sizeof(g_array_5c9248));
@@ -1300,8 +1317,11 @@ void Mesh::Mesh_DrawOutlinedTinted(u32 tintColor, float tintBlend, PolyBatcher *
         v0_28 = verts_4 + faces[i_16].poly.idx[0];
         v1_17 = verts_4 + faces[i_16].poly.idx[1];
         v2_17 = verts_4 + faces[i_16].poly.idx[2];
+        /* Keep the same separate rounding as the untinted outline path. */
+        const volatile float areaProduct0 = (v1_17->x - v0_28->x) * (v2_17->y - v0_28->y);
+        const volatile float areaProduct1 = (v1_17->y - v0_28->y) * (v2_17->x - v0_28->x);
         if ((v0_28->z > 1.0f) ^ (v1_17->z > 1.0f) ^ (v2_17->z > 1.0f) ^ (flip_19 == 1) ^
-            ((v1_17->x - v0_28->x) * (v2_17->y - v0_28->y) - (v1_17->y - v0_28->y) * (v2_17->x - v0_28->x) <= 0.0f)) {
+            (areaProduct0 - areaProduct1 <= 0.0f)) {
             if ((v0_28->rhw > invFar_14 || v1_17->rhw > invFar_14 || v2_17->rhw > invFar_14) &&
                 (v0_28->z >= 0.0f || v1_17->z >= 0.0f || v2_17->z >= 0.0f) &&
                 (v0_28->x < viewW || v1_17->x < viewW || v2_17->x < viewW) &&
@@ -1355,6 +1375,8 @@ void Mesh::Mesh_DrawOutlinedTinted(u32 tintColor, float tintBlend, PolyBatcher *
                     maxZ_26 = faceMaxZ_3;
                 batcher->SubmitPolyCalls(&poly_12);
             }
+            if (!g_meshOutlinesEnabled)
+                continue;
             g_outlineEdgeKeys[g_cntOutlineEdgeKeys] = Outline_MakeEdgeKey(
                 faces[i_16].poly.idx[0], faces[i_16].poly.idx[1], ((FlatVertex *)faces[i_16].verts)->diffuse,
                 ((fog0_3 >> 16) + (fog1_28 >> 16)) << 15, eligible_12);
@@ -1369,6 +1391,11 @@ void Mesh::Mesh_DrawOutlinedTinted(u32 tintColor, float tintBlend, PolyBatcher *
             g_cntOutlineEdgeKeys++;
             eligible_12 = 0;
         }
+    }
+
+    if (!g_meshOutlinesEnabled) {
+        vbTransformed->Unlock();
+        return;
     }
 
     memset(g_array_5c9248, 0, sizeof(g_array_5c9248));

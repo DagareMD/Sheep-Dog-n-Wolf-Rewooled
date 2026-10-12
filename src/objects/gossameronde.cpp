@@ -37,6 +37,10 @@ void GossamerOnde::Update()
 {
     switch (state) {
         case GONDE_ST_WAVE:
+            // WAVE keys 5 and 6 collapse the mesh and hold it at zero scale.
+            // Hide before AdvanceAnim interpolates the shrinking portion.
+            if (anim.frame >= 5)
+                SetVisible(0);
             if (AnimFlags(ANIM_F_FINISHED)) {
                 g_pWolf->HandleMessage(this, MSG_RIDER_REMOVE, 0);
                 if (sheep)

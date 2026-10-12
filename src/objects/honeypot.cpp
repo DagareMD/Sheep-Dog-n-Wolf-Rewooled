@@ -39,6 +39,8 @@ u32 g_honeyPotSamInHoney;
 void HoneyPot::PostLoadInit()
 {
     void *props = record;
+    /* Clear the previous level's honey contact before the new bees can update. */
+    g_honeyPotSamInHoney = 0;
     if (IsInWorld())
         SnapToGround(1);
     shadow.radius = 20;

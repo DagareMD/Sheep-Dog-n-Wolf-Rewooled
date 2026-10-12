@@ -335,6 +335,8 @@ void Wheel::SetState(u8 newState)
             bossMsgOn = 0;
             if (boss)
                 boss->HandleMessage(this, MSG_WHEEL_SPIN, &bossMsgSender);
+            /* Stop the spinning loop before replacing its handle with the rail sound. */
+            StopSound(soundHandle);
             soundHandle = Sound_Play(SND_WHEEL_ROLL, this, 0xff, SNDF_POSITIONAL, 0x1000);
             break;
     }

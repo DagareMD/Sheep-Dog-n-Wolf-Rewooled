@@ -73,8 +73,24 @@ struct TlVertexTex {
 #include "sdw_classes.h"
 
 #include "draw2d.h"
+#include "mesh.h"
 char g_davTexturePath[SDW_PATH_MAX]; /* the .dav path of the loaded texture pages */
 char g_vdx7Magic[] = "VDX7"; /* the texture-page file signature */
+
+struct PolyBatcher::OutlineTexture {
+    Vdx7Record rect;
+    u16 *original;
+    u8 outlinesEnabled;
+    OutlineTexture *next;
+    ~OutlineTexture() { delete[] original; }
+};
+
+struct PolyBatcher::OutlineMesh {
+    Mesh *mesh;
+    u32 normalFaceCount;
+    u32 totalFaceCount;
+    OutlineMesh *next;
+};
 
 int PolyBatcher_CompareSortZ(RenderPoly **a, RenderPoly **b);
 
@@ -99,6 +115,8 @@ PolyBatcher::PolyBatcher(D3DApp *app, u32 capacity, u32 pageCount)
 {
     u32 idx;
 
+    outlineTextures = 0;
+    outlineMeshes = 0;
     renderer = app;
     batchCapacity = capacity;
     defaultStateFlags = RSF_DITHER | RSF_COLORVERTEX;
@@ -133,6 +151,8 @@ PolyBatcher::PolyBatcher(D3DApp *app, u32 capacity, u32 pageCount)
  * *outPageCount receives LoadTexturePages' page count (0 on failure). */
 PolyBatcher::PolyBatcher(D3DApp *app, u32 capacity, const char *davPath, s32 *outPageCount)
 {
+    outlineTextures = 0;
+    outlineMeshes = 0;
     renderer = app;
     batchCapacity = capacity;
     defaultStateFlags = RSF_DITHER | RSF_COLORVERTEX;
@@ -159,6 +179,16 @@ PolyBatcher::~PolyBatcher()
 {
     u32 i;
 
+    while (outlineTextures) {
+        OutlineTexture *next = outlineTextures->next;
+        delete outlineTextures;
+        outlineTextures = next;
+    }
+    while (outlineMeshes) {
+        OutlineMesh *next = outlineMeshes->next;
+        delete outlineMeshes;
+        outlineMeshes = next;
+    }
     if (lineBatchVerts)
         delete lineBatchVerts;
     for (i = 0; i < texturePageCount; i++) {
@@ -508,6 +538,95 @@ s32 PolyBatcher::LoadTexturePages(const char *path)
     return total;
 }
 
+/* Retain only the explicitly selected tails, once per rectangle even when several faces share it. */
+void PolyBatcher::ConfigureOutlineTexture(const Vdx7Record &rect)
+{
+    if (rect.w <= 0 || rect.h <= 0 || rect.page >= texturePageCount)
+        return;
+    for (OutlineTexture *entry = outlineTextures; entry; entry = entry->next)
+        if (entry->rect.page == rect.page && entry->rect.x == rect.x && entry->rect.y == rect.y &&
+            entry->rect.w == rect.w && entry->rect.h == rect.h)
+            return;
+    Texture *page = textures[rect.page];
+    if (!page || page->format != TEXFMT_ARGB4444 || rect.x < 0 || rect.y < 0 ||
+        (u32)(rect.x + rect.w) > page->width || (u32)(rect.y + rect.h) > page->height)
+        return;
+    RdLockedRect locked;
+    if (g_renderDevice->LockTexture(page->surface, RD_TEXLOCK_READ, &locked) < 0)
+        return;
+    OutlineTexture *entry = new OutlineTexture;
+    entry->rect = rect;
+    entry->original = new u16[rect.w * rect.h];
+    entry->outlinesEnabled = 1;
+    entry->next = outlineTextures;
+    outlineTextures = entry;
+    for (s32 y = 0; y < rect.h; ++y) {
+        const u16 *row = (const u16 *)((const u8 *)locked.pixels + (rect.y + y) * locked.pitch);
+        memcpy(entry->original + y * rect.w, row + rect.x, rect.w * sizeof(u16));
+    }
+    g_renderDevice->UnlockTexture(page->surface);
+}
+
+/* Group the mesh's authored outline triangles at the end of its face array. Every mesh drawing
+ * path already respects faceCount, so changing the draw count removes the border geometry without
+ * altering any hand texture, vertex position, or animation. Mesh retains ownership of all faces. */
+void PolyBatcher::ConfigureOutlineMesh(Mesh *mesh, const u8 *outlineFaces)
+{
+    u32 normalCount = 0;
+    for (u32 i = 0; i < mesh->faceCount; ++i)
+        if (!outlineFaces[i])
+            ++normalCount;
+    if (!normalCount || normalCount == mesh->faceCount)
+        return;
+    RenderPoly *faces = new RenderPoly[mesh->faceCount];
+    u32 normalIndex = 0, outlineIndex = normalCount;
+    for (u32 i = 0; i < mesh->faceCount; ++i) {
+        const RenderPoly &source = mesh->faces[i];
+        RenderPoly &dest = faces[outlineFaces[i] ? outlineIndex++ : normalIndex++];
+        dest.type = source.type;
+        for (u32 corner = 0; corner < 3; ++corner)
+            dest.poly.idx[corner] = source.poly.idx[corner];
+        memcpy(dest.verts, source.verts, (source.type & ~RPOLY_F_8000) >= RPOLY_TEXTURED_BASE ? 0x60 : 0x48);
+        dest.sortZ = 0; /* computed when a face is submitted for drawing */
+    }
+    delete[] mesh->faces;
+    mesh->faces = faces;
+    OutlineMesh *entry = new OutlineMesh;
+    entry->mesh = mesh;
+    entry->normalFaceCount = normalCount;
+    entry->totalFaceCount = mesh->faceCount;
+    entry->next = outlineMeshes;
+    outlineMeshes = entry;
+}
+
+/* Remove authored outline geometry from the draw range and cut dark border pixels out of the
+ * selected tail textures. Restore the geometry and original texels when outlines are enabled. */
+void PolyBatcher::UpdateObjectOutlines()
+{
+    for (OutlineMesh *entry = outlineMeshes; entry; entry = entry->next)
+        entry->mesh->faceCount = g_meshOutlinesEnabled ? entry->totalFaceCount : entry->normalFaceCount;
+    for (OutlineTexture *entry = outlineTextures; entry; entry = entry->next) {
+        if (entry->outlinesEnabled == g_meshOutlinesEnabled)
+            continue;
+        const Vdx7Record &rect = entry->rect;
+        Texture *page = textures[rect.page];
+        RdLockedRect locked;
+        if (g_renderDevice->LockTexture(page->surface, RD_TEXLOCK_READWRITE, &locked) < 0)
+            continue;
+        for (s32 y = 0; y < rect.h; ++y) {
+            u16 *row = (u16 *)((u8 *)locked.pixels + (rect.y + y) * locked.pitch) + rect.x;
+            for (s32 x = 0; x < rect.w; ++x) {
+                u16 pixel = entry->original[y * rect.w + x];
+                if (!g_meshOutlinesEnabled && !(pixel & 0x0888)) /* all RGB channels below 128 */
+                    pixel |= 0xf000;
+                row[x] = pixel;
+            }
+        }
+        g_renderDevice->UnlockTexture(page->surface);
+        entry->outlinesEnabled = g_meshOutlinesEnabled;
+    }
+}
+
 /* after DDERR_SURFACELOST: restores every DirectDraw surface, frees the texture pages and their batches
  * and reloads them from g_davTexturePath; E_FAIL when the page count changed (or the restore failed).
  *
@@ -522,6 +641,8 @@ long PolyBatcher::Render_RestoreLostSurfaces()
 
     hr = g_pD3DAppMain->GetDirectDraw()->RestoreAllSurfaces();
     if (hr >= 0) {
+        OutlineTexture *savedOutlines = outlineTextures;
+        outlineTextures = 0;
         oldCount = texturePageCount;
         for (n = 0; n < texturePageCount; n++) {
             if (textures[n]) {
@@ -551,9 +672,16 @@ long PolyBatcher::Render_RestoreLostSurfaces()
             delete texBatchCounts;
             texBatchCounts = 0;
         }
-        LoadTexturePages(g_davTexturePath);
-        if (texturePageCount != oldCount)
+        s32 loaded = LoadTexturePages(g_davTexturePath);
+        if (!loaded || texturePageCount != oldCount)
             hr = E_FAIL;
+        while (savedOutlines) {
+            OutlineTexture *next = savedOutlines->next;
+            if (hr >= 0)
+                ConfigureOutlineTexture(savedOutlines->rect);
+            delete savedOutlines;
+            savedOutlines = next;
+        }
     }
     return hr;
 }
@@ -567,6 +695,7 @@ bool PolyBatcher::IsImmediateTexture(u32 textureIndex)
 /* clears target and z (clearColor, z = 1.0), begins the scene and applies the default state flags. */
 void PolyBatcher::Render_BeginFrame()
 {
+    UpdateObjectOutlines();
     renderer->ClearTarget(clearColor);
     renderer->BeginScene();
     textureDirty = 1;
