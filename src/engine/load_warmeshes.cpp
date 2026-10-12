@@ -56,26 +56,49 @@ float Tex_CornerUV(u32 offset, s32 size, s32 base)
 
 /* ----: the mesh pass ---- */
 
-/* Resolve actor names through each WAR's directory; resource indices are local to the file. */
+/* the NUL-terminated name at the cursor, stepped over (with its padding to an even length); 0 when it runs past the
+ * end of the file */
+static const char *Load_TakeName(BsFile *file)
+{
+    const char *name = (const char *)file->data + file->cursor;
+    s32 length = 0;
+    while (file->cursor + length < file->size && name[length])
+        length++;
+    if (file->cursor + length >= file->size)
+        return 0;
+    file->cursor += (length + 2) & ~1;
+    return name;
+}
+
+/* Resolve actor names through each WAR's directory; resource indices are local to the file. The table is
+ * {u16 count; per model {u16 resource; u16 anim count; name; per anim {u16 id; name}}}, names padded to an even
+ * length. Some PlayStation levels (LEV00, LEV12, LEV15, LEV17, WHEEL) list the table at file offset 0, that is not at
+ * all, so every read is checked against the file: -1 (no such model) rather than reading past it. */
 static s32 Load_FindNamedModel(BsFile *file, const char *modelName)
 {
     if (!file->ok)
         return -1;
     file->FindFrameOfType(WAR_RES_ANIM_NAMES);
-    if (file->frameType != WAR_RES_ANIM_NAMES)
+    if (file->frameType != WAR_RES_ANIM_NAMES || (u32)file->cursor < 0x10 + file->frameCount * 4 ||
+        file->cursor + 2 > file->size)
         return -1;
     u16 modelCount = file->ReadU16(1);
     while (modelCount--) {
+        if (file->cursor + 4 > file->size)
+            return -1;
         u16 resource = file->ReadU16(1);
         u16 animCount = file->ReadU16(1);
-        const char *name = (const char *)file->data + file->cursor;
+        const char *name = Load_TakeName(file);
+        if (!name)
+            return -1;
         if (!strcmp(name, modelName))
             return resource;
-        file->cursor += (strlen(name) + 2) & ~1;
         while (animCount--) {
+            if (file->cursor + 2 > file->size)
+                return -1;
             file->ReadU16(1);
-            name = (const char *)file->data + file->cursor;
-            file->cursor += (strlen(name) + 2) & ~1;
+            if (!Load_TakeName(file))
+                return -1;
         }
     }
     return -1;
