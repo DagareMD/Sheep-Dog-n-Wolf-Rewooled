@@ -9,8 +9,9 @@ IDirectInputDevice8A *g_pEnumJoystickDevice; /* the device DI_JoystickAxisEnumCa
 
 /* ======================================================================== Joystick, */
 
-/* The controller chosen in the launcher (D3DApp::joystickIndex, in SDL's order) through SDL3
- * (src/platform/platform.h), with DirectInput's axis range and button numbers. */
+/* The controller through SDL3 (src/platform/platform.h), with DirectInput's axis range and button numbers: the one
+ * chosen in the launcher (D3DApp::joystickIndex, in SDL's order) or the first, and whichever is plugged in later
+ * (platform_sdl.cpp opens it). The device always exists; its Update fails while no controller is connected. */
 #include "../platform/platform.h"
 
 Joystick::Joystick(u16 buttonCount, D3DApp *app, HRESULT *result)
@@ -21,11 +22,9 @@ Joystick::Joystick(u16 buttonCount, D3DApp *app, HRESULT *result)
         AllocButtons(buttonCount, app);
     deviceKind = INPUTDEV_JOYSTICK;
     pDevice = NULL;
-    *result = E_FAIL;
-    if (Platform_OpenJoystick(pApp->joystickIndex)) {
-        isDigital = 0;
-        *result = S_OK;
-    }
+    isDigital = 0;
+    *result = S_OK;
+    Platform_OpenJoystick(pApp->joystickIndex); /* none yet: one plugged in later is opened then */
 }
 
 Joystick::~Joystick()
