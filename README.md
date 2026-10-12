@@ -1,5 +1,5 @@
 <p align="center">
-    <img src="https://github.com/SheepStealer2001/Sheep-Dog-n-Wolf-Rewooled/blob/main/res/icon.png?raw=true" style="width: 128px;" />
+    <img src="https://github.com/SDW-Community/Sheep-Dog-n-Wolf-Rewooled/blob/main/res/banner.png?raw=true" style="width: 512px;" />
 </p>
 
 <h1 align="center">Sheep, Dog 'n' Wolf: Rewooled</h1>
