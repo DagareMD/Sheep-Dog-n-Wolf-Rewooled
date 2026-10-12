@@ -17,7 +17,7 @@
 ---
 ### How to use
 - **You need to provide your own files from the original game version, this project does not include any assets**
-- **Although it is supported, PSX files are still not fully tested and there are quirks to work out **
+- **Although it is supported, PSX files are still not fully tested and there are quirks to work out**
 - On the launcher you simply browse for your original game folder
 ### Features
 
