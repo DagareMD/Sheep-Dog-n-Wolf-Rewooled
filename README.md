@@ -4,7 +4,7 @@
 
 <h1 align="center">Sheep, Dog 'n' Wolf: Rewooled</h1>
 
-<h3 align="center">An open-source multiplatform implementation of Sheep, Dog 'n' Wolf</h3>
+<h3 align="center">An open-source multiplatform implementation of Sheep, Dog 'n' Wolf PC </h3>
 
 
 <div align="center">
@@ -16,8 +16,8 @@
 
 ---
 ### How to use
-- **You need to provide your own files from the original PAL PC version, this project does not include any assets**
-- **Although it is being developed, you cannot currently use PlayStation 1 version for the assets**
+- **You need to provide your own files from the original game version, this project does not include any assets**
+- **Although it is supported, PSX files are still not fully tested and there are quirks to work out **
 - On the launcher you simply browse for your original game folder
 ### Features
 
