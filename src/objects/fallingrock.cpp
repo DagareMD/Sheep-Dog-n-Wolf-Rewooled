@@ -14,6 +14,7 @@ u32 Anim_Start(Instance *, Animator *, u16, u32);
 #include "camera.h"
 #include "../app/app_main.h"
 #include "../engine/input.h"
+#include "../engine/time.h"
 #define SDW_INLINE_INSTANCE_INST 1
 #include "instance_inlines.h"
 #undef SDW_INLINE_INSTANCE_INST
@@ -46,7 +47,7 @@ void FallingRock::PostLoadInit()
     SetContactEnabled(0);
     SetVisible(0);
     PlayAnim(AROCHEA2_ANIM_STAND2, 0, 0);
-    fallTicksLeft = 5;
+    fallTicksLeft = 6 * TIME_REFERENCE_STEP;
     camHoldMs = 500;
     impactSoundHandle = 0;
 }
@@ -60,20 +61,24 @@ void FallingRock::Update()
                 Trigger();
             }
             break;
-        case FALLINGROCK_ST_FALL:
+        case FALLINGROCK_ST_FALL: {
+            // Five steps of descent, then the original sixth-step impact.
+            s32 before = fallTicksLeft > TIME_REFERENCE_STEP ? fallTicksLeft - TIME_REFERENCE_STEP : 0;
+            fallTicksLeft = (u16)(g_dt < fallTicksLeft ? fallTicksLeft - g_dt : 0);
+            s32 after = fallTicksLeft > TIME_REFERENCE_STEP ? fallTicksLeft - TIME_REFERENCE_STEP : 0;
             delta.x = 0;
-            delta.y = 400;
+            delta.y = (s16)(before * 400 / TIME_REFERENCE_STEP - after * 400 / TIME_REFERENCE_STEP);
             delta.z = 0;
-            if (fallTicksLeft > 0) {
+            if (delta.y)
                 Translate(&delta);
-                --fallTicksLeft;
-            } else {
+            if (fallTicksLeft == 0) {
                 PlayAnim(AROCHEA2_ANIM_STAND2, 0, 0);
                 impactSoundHandle = Sound_Play(SND_SR2ROFA2, this, 0xff, SNDF_NO_RETRIGGER, 0x1000);
                 Camera_StartShake(0x14, 4000);
                 state = FALLINGROCK_ST_LANDED;
             }
             break;
+        }
         case FALLINGROCK_ST_LANDED:
             SetContactEnabled(1);
             if (camElapsedMs > camHoldMs) {

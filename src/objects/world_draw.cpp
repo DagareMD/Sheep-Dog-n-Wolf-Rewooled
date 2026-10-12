@@ -232,8 +232,8 @@ void Instance_DrawAnimatedOnScreen(Instance *instance, Animator *animation, Came
     HudWork w;
     w.focal = g_projFocalScale;
     g_screen.SetProjection(distance);
-    w.dx = g_screen.ScaleX(screenXY[0] - (g_screen.GetGeometry(&w.geoA)->width >> 1));
-    w.dy = g_screen.ScaleY(screenXY[1] - (g_screen.GetGeometry(&w.geoB)->height >> 1));
+    w.dx = HudElement::FromCentreX(screenXY[0] - (g_screen.GetGeometry(&w.geoA)->width >> 1));
+    w.dy = HudElement::FromCentreY(screenXY[1] - (g_screen.GetGeometry(&w.geoB)->height >> 1));
     Instance_DrawAnimParts(instance, animation, camera, 0);
     w.mesh = (Mesh *)Texture_FindByResource(instance->inst_model);
     w.mesh->vbTransformed->Lock(DDLOCK_WAIT, (void **)&w.vertices, &w.bytes);

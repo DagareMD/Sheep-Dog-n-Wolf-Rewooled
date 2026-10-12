@@ -3,6 +3,7 @@
  */
 #include "sdw_enums.h"
 #include "timer.h"
+#include "fixed_math.h"
 
 #define SDW_MEMBERS_PolyBatcher \
     PolyBatcher(D3DApp *app, u32 capacity, const char *davPath, s32 *outPageCount); /* PolyBatcher_Construct */
@@ -479,8 +480,8 @@ u8 Load_DAVnWAR(const char *levelPath, Dav *dav)
         Weather_InitRain(&g_camPos);
     else if (g_weatherType == WEATHER_SNOW)
         Weather_InitSnow(&g_camPos);
-    rgb = ((g_pDav->war.header->clearR >> 1) << 16) + ((g_pDav->war.header->clearG >> 1) << 8) +
-          (g_pDav->war.header->clearB >> 1);
+    rgb = Color_ExpandPs1((g_pDav->war.header->clearR << 16) + (g_pDav->war.header->clearG << 8) +
+                          g_pDav->war.header->clearB);
     g_pPolyBin->SetClearColor(rgb);
     g_pViewFrustum->SetFogColor(rgb);
     g_scnActiveBaseCount = g_scnObjectCount;

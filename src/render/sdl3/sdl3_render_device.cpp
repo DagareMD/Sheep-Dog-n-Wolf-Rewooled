@@ -215,7 +215,7 @@ enum {
 
 struct Sdl3PsParams {
     float fogColor[4];
-    float mode[4]; /* textured, alpha test, fog, specular */
+    float mode[4]; /* texture mode (0: diffuse, 1: MODULATE, 2: MODULATE2X), alpha test, fog, specular */
 };
 
 struct Sdl3Draw {
@@ -232,7 +232,7 @@ struct Sdl3State {
     u32 srcBlend, dstBlend;
     int alphaTest, zEnable, zWrite, specular, fog, linear;
     u32 cull;
-    int textured; /* COLOROP MODULATE (texture x diffuse); else the diffuse colour (SELECTARG1 DIFFUSE, or DISABLE) */
+    int textured; /* 0: diffuse (SELECTARG1 DIFFUSE or DISABLE), 1: MODULATE, 2: MODULATE2X */
     u32 fogColor;
     Sdl3Texture *texture;
 };
@@ -280,6 +280,7 @@ public:
 
     void SetStateFlags(u32 rsf);
     void ClearStateFlags(u32 rsf);
+    void SetTextureModulation2X(bool enabled) { state.textured = enabled ? 2 : 1; }
     void EnableAlphaBlend(int on) { state.blend = on != 0; }
     void SetBlendFunc(u32 src, u32 dst)
     {
@@ -634,7 +635,7 @@ void Sdl3RenderDevice::SetStateFlags(u32 flags)
         state.zWrite = 1;
     if (flags & RSF_ZWRITE_OFF)
         state.zWrite = 0;
-    state.textured = (flags & RSF_TEXTURED) != 0; /* else COLOROP SELECTARG1 DIFFUSE */
+    state.textured = (flags & RSF_TEXTURED) ? 2 : 0; /* ColorFix: MODULATE2X; else SELECTARG1 DIFFUSE */
     if (flags & RSF_FILTER_LINEAR)
         state.linear = 1;
     if (flags & RSF_FOG)
@@ -790,7 +791,7 @@ long Sdl3RenderDevice::DrawPrimitive(u32 primitive, u32 fvf, void *data, u32 cou
     ps.fogColor[1] = ((state.fogColor >> 8) & 0xff) / 255.0f;
     ps.fogColor[2] = (state.fogColor & 0xff) / 255.0f;
     ps.fogColor[3] = 1.0f;
-    ps.mode[0] = state.textured ? 1.0f : 0.0f;
+    ps.mode[0] = (float)state.textured;
     ps.mode[1] = state.alphaTest ? 1.0f : 0.0f;
     ps.mode[2] = state.fog ? 1.0f : 0.0f;
     ps.mode[3] = state.specular ? 1.0f : 0.0f;

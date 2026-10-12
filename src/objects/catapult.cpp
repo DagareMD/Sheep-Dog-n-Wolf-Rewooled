@@ -712,6 +712,7 @@ void Catapult::UpdatePowerInput()
 }
 void Catapult::DrawPowerGauge()
 {
+    HudElement hud(HudElement::Start, HudElement::Start);
     s16 x, y;
     x = (power * 84 >> 10) + 24;
     y = 39;

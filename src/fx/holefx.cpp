@@ -161,6 +161,7 @@ HoleFX::HoleFX()
     app = 0;
     viewport = 0;
     vertexBuffer = 0;
+    captureSurface = 0;
     maskTexture = 0;
 }
 
@@ -189,11 +190,17 @@ void HoleFX::Init(D3DApp *app, void *viewport, float radius, u8 useCubicBezier)
     pos[1] = this->viewport->viewportHeight / 2.0f;
     pos[2] = this->viewport->nearZ;
     captured = 0;
+    /* Each level load creates a fresh capture texture; release the previous one before replacing it. */
+    if (captureSurface) {
+        g_renderDevice->ReleaseTexture(captureSurface);
+        captureSurface = 0;
+    }
     if (g_renderDevice->CreateFrameCaptureTexture((s32)this->viewport->viewportWidth,
                                                   (s32)this->viewport->viewportHeight, &captureSurface, &captureWidth,
                                                   &captureHeight) < 0) {
         hasCaptureSurface = HOLEFX_MASK;
-        maskTexture = new Texture(this->app, 0x100, 0x100, TEXFMT_ARGB4444, &result);
+        if (!maskTexture)
+            maskTexture = new Texture(this->app, 0x100, 0x100, TEXFMT_ARGB4444, &result);
         BuildCircleMask();
         screenRadius = sqrt(this->viewport->viewportWidth * this->viewport->viewportWidth / 4.0 +
                             this->viewport->viewportHeight * this->viewport->viewportHeight / 4.0);
@@ -331,6 +338,8 @@ void HoleFX::Draw(PolyBatcher *unusedBatcher)
         vertexBuffer->Lock(DDLOCK_WAIT, &locked, &size);
         SDW_RD(app->GetDevice())->SetTexture(0, SDW_RDTEX(captureSurface));
         app->Render_SetStateFlags(RSF_DITHER | RSF_TEXTURED);
+        /* The captured frame already has ColorFix's colours; shade it with plain MODULATE. */
+        SDW_RD(app->GetDevice())->SetTextureModulation2X(false);
         for (tri = 0; tri < 120; tri++) {
             a = (HoleVertex *)locked + tris[tri].poly.idx[0];
             vb = (HoleVertex *)locked + tris[tri].poly.idx[1];

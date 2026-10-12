@@ -1,5 +1,6 @@
 
 #include "sdw_types.h"
+#include "../engine/screen.h"
 #include "sdw_enums.h"
 #include "scenaric_props.h"
 class Instance;
@@ -177,17 +178,19 @@ void InstantHoover::Update()
 }
 void InstantHoover::DrawHud()
 {
+    HudElement hud(HudElement::Start, HudElement::End);
     s16 top = ScreenHeightS32() - 50;
-    g_spriteCrayon2.Draw(g_screenLayerBase0 + 9, 10, top, 110, top + 40, hudTint, 0);
+    u32 panelTint = (hudTint & 0xffffff) == 0xffffff ? (hudTint & 0xff000000) | 0x808080 : hudTint;
+    g_spriteCrayon2.Draw(g_screenLayerBase0 + 9, 10, top, 110, top + 40, panelTint, 0);
     if (martianCount - capturedCount > 9) {
-        hudDigits.Draw(g_screenLayerBase + 9, 55, top + 10, 75, top + 30, 0xffffff, 1, 0);
-        hudDigits.Draw(g_screenLayerBase + 9, 75, top + 10, 95, top + 30, 0xffffff, martianCount - capturedCount - 10,
+        hudDigits.Draw(g_screenLayerBase + 9, 55, top + 10, 75, top + 30, 0x808080, 1, 0);
+        hudDigits.Draw(g_screenLayerBase + 9, 75, top + 10, 95, top + 30, 0x808080, martianCount - capturedCount - 10,
                        0);
     } else {
-        hudDigits.Draw(g_screenLayerBase + 9, 55, top + 10, 75, top + 30, 0xffffff, 0, 0);
-        hudDigits.Draw(g_screenLayerBase + 9, 75, top + 10, 95, top + 30, 0xffffff, martianCount - capturedCount, 0);
+        hudDigits.Draw(g_screenLayerBase + 9, 55, top + 10, 75, top + 30, 0x808080, 0, 0);
+        hudDigits.Draw(g_screenLayerBase + 9, 75, top + 10, 95, top + 30, 0x808080, martianCount - capturedCount, 0);
     }
-    hudIcon.Draw(g_screenLayerBase + 9, 15, top + 10, 47, top + 29, 0xffffff, 0);
+    hudIcon.Draw(g_screenLayerBase + 9, 15, top + 10, 47, top + 29, 0x808080, 0);
 }
 sptr InstantHoover::HandleMessage(ScnObject *sender, u32 msgId, void *arg)
 {

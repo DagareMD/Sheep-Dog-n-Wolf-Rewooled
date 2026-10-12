@@ -1,5 +1,6 @@
 
 #include "sdw_types.h"
+#include "../engine/screen.h"
 #include "sdw_enums.h"
 #include "scenaric_props.h"
 class Instance;
@@ -96,16 +97,19 @@ void Chronometer::Update()
     if (onScreen) {
         xy[0] = 37;
         xy[1] = ScreenHeightS16() + slideOffset - 16;
-        RenderEx(&hudCam, bufToggle ? unusedBufA : unusedBufB, 100, 0x180, xy);
-        bufToggle = !bufToggle;
-        digitSprite.Draw(g_screenLayerBase + 8, 65, ScreenHeightS16() - 8 - digitSprite.height + slideOffset,
-                         digitSprite.width + 65, ScreenHeightS16() + slideOffset - 8, 0x808080,
-                         (timeFixed / 40960) % 10, 0);
-        digitSprite.Draw(g_screenLayerBase + 8, 83, ScreenHeightS16() - 8 - digitSprite.height + slideOffset,
-                         digitSprite.width + 83, ScreenHeightS16() + slideOffset - 8, 0x808080, (timeFixed / 4096) % 10,
-                         0);
-        g_spriteCrayon2.Draw(g_screenLayerBase + 9, 10, ScreenHeightS16() + slideOffset - 32, 109,
-                             ScreenHeightS16() + slideOffset, panelColor, 0);
+        {
+            HudElement hud(HudElement::Start, HudElement::End);
+            RenderEx(&hudCam, bufToggle ? unusedBufA : unusedBufB, 100, 0x180, xy);
+            bufToggle = !bufToggle;
+            digitSprite.Draw(g_screenLayerBase + 8, 65, ScreenHeightS16() - 8 - digitSprite.height + slideOffset,
+                             digitSprite.width + 65, ScreenHeightS16() + slideOffset - 8, 0x808080,
+                             (timeFixed / 40960) % 10, 0);
+            digitSprite.Draw(g_screenLayerBase + 8, 83, ScreenHeightS16() - 8 - digitSprite.height + slideOffset,
+                             digitSprite.width + 83, ScreenHeightS16() + slideOffset - 8, 0x808080, (timeFixed / 4096) % 10,
+                             0);
+            g_spriteCrayon2.Draw(g_screenLayerBase + 9, 10, ScreenHeightS16() + slideOffset - 32, 109,
+                                 ScreenHeightS16() + slideOffset, panelColor, 0);
+        }
         AdvanceAnim();
     }
 }
@@ -135,9 +139,13 @@ sptr Chronometer::HandleMessage(ScnObject *sender, u32 msgId, void *arg)
                         timeFixed = (s32)(sptr)arg;
                     if ((timeFixed * 1000 >> 12) > 10000)
                         Sound_SetVolume(tickSoundHandle, 0);
-                    else if (timeFixed)
-                        Sound_SetVolume(tickSoundHandle, 63 - ((timeFixed << 12) / 1000 * 63) / 10000);
-                    else
+                    else if (timeFixed) {
+                        u16 volume = (u16)(63 - ((timeFixed << 12) / 1000 * 63) / 10000);
+                        /* Cap the wrapped tick volume before SFX scaling, preserving the original tick timing. */
+                        if (volume > 255)
+                            volume = 255;
+                        Sound_SetVolume(tickSoundHandle, volume);
+                    } else
                         Sound_SetVolume(tickSoundHandle, 63);
                 } else
                     timeFixed = (s32)(sptr)arg;

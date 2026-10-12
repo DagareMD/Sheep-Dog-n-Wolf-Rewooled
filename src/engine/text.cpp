@@ -1410,16 +1410,145 @@ void Text_Printf(u8 align, const char *fmt, ...)
     }
 }
 
-/* the word wrap: breaks lines at bytes <= 0x20 so that a line holds at most `cols` visible characters (colour
- * codes do not count), cutting a word that is longer than a whole line; each line goes to the emitter. */
-void Text_WordWrap(char *text, u8 mode)
+void Text_ElementCentre(const void *, float &x, float &y)
+{
+    x = g_textWinX + g_textWinW * 0.5f;
+    y = g_textWinY + g_textWinH * 0.5f;
+}
+
+/* The line walkers are shared by drawing and measuring. Drawing keeps the game's cursor/colour
+ * writes at line boundaries; measurement has the mod's private 32-bit cursor and no rendering state. */
+struct TextDrawPass {
+    u32 color;
+    float z;
+
+    s32 CursorX() const { return g_textCursorX; }
+    s32 CursorY() const { return g_textCursorY; }
+    void BeginLine()
+    {
+        color = g_pCurFont->color;
+        z = g_screen.Draw2D_LayerToZ(g_textLayer);
+    }
+    void SetColor(const u8 *rgb) { color = rgb[0] | (rgb[1] << 8) | (rgb[2] << 16); }
+    void Glyph(u8 ch, s32 x, s32 y) { Text_DrawString(ch, x, y, z, color); }
+    void EndLine(s32 x, s32 y)
+    {
+        g_pCurFont->color = color;
+        g_textCursorX = x;
+        g_textCursorY = y;
+    }
+    void AdvanceLine()
+    {
+        g_textCursorX = 0;
+        g_textCursorY += g_pCurFont->lineHeight;
+    }
+};
+
+struct TextMeasurePass {
+    s32 cursorX, cursorY;
+    float x0, y0, x1, y1;
+
+    TextMeasurePass()
+        : cursorX(g_textCursorX), cursorY(g_textCursorY), x0(1e9f), y0(1e9f), x1(-1e9f), y1(-1e9f) {}
+    s32 CursorX() const { return cursorX; }
+    s32 CursorY() const { return cursorY; }
+    void BeginLine() {}
+    void SetColor(const u8 *) {}
+    void Glyph(u8, s32 x, s32 y)
+    {
+        const Font *font = g_pCurFont;
+        if (x + font->glyphWidth < 0 || x >= g_textWinW || y + font->glyphHeight < 0 || y >= g_textWinH)
+            return;
+        /* Match the mod: a partly visible glyph contributes its whole cell, before clipping. */
+        float gx = (float)(x + g_textWinX + g_textClipOffX);
+        float gy = (float)(y + g_textWinY + g_textClipOffY);
+        if (gx < x0)
+            x0 = gx;
+        if (gy < y0)
+            y0 = gy;
+        if (gx + font->glyphWidth > x1)
+            x1 = gx + font->glyphWidth;
+        if (gy + font->glyphHeight > y1)
+            y1 = gy + font->glyphHeight;
+    }
+    void EndLine(s32 x, s32 y)
+    {
+        cursorX = x;
+        cursorY = y;
+    }
+    void AdvanceLine()
+    {
+        cursorX = 0;
+        cursorY += g_pCurFont->lineHeight;
+    }
+};
+
+template <class Pass> static void Text_WalkLine(Pass &pass, const char *text, s32 n, u8 align)
+{
+    const u8 *p;
+    s32 idx;
+    s32 printable = 0;
+    s32 x;
+    s32 y;
+    u8 ch;
+    if (*text == 0 || n == 0)
+        return;
+    p = (const u8 *)text;
+    for (x = 0; x < n; x++) {
+        if (*p >= 0x20)
+            printable++;
+        if (*p == 1) {
+            p += 3;
+            x--;
+        }
+        p++;
+    }
+    switch (align) {
+        case TEXTALIGN_CONTINUE:
+            x = pass.CursorX();
+            break;
+        case TEXTALIGN_LEFT:
+            x = 0;
+            break;
+        case TEXTALIGN_CENTER:
+            x = (g_textWinW - printable * g_pCurFont->glyphWidth) / 2;
+            break;
+        case TEXTALIGN_RIGHT:
+            x = g_textWinW - printable * g_pCurFont->glyphWidth;
+            break;
+    }
+    y = pass.CursorY();
+    if (y >= g_textWinH)
+        return;
+    pass.BeginLine();
+    for (idx = 0; idx < n; idx++) {
+        ch = *text++;
+        if (ch == '\n') {
+            y += g_pCurFont->lineHeight;
+            x = 0;
+        } else if (ch == ' ') {
+            x += g_pCurFont->glyphWidth;
+        } else if (ch == 1) {
+            pass.SetColor((const u8 *)text);
+            text += 3;
+            idx--;
+        } else {
+            pass.Glyph(ch, x, y);
+            x += g_pCurFont->glyphWidth;
+        }
+    }
+    pass.EndLine(x, y);
+}
+
+/* Break at bytes <= 0x20, cutting words longer than cols; colour codes do not consume columns. */
+template <class Pass> static void Text_WalkWordWrap(Pass &pass, const char *text, u8 mode)
 {
     u8 skip;
     u8 hard;
-    u8 *end;
-    u8 *line;
-    u8 *p;
-    p = line = end = (u8 *)text;
+    const u8 *end;
+    const u8 *line;
+    const u8 *p;
+    p = line = end = (const u8 *)text;
     skip = 0;
     hard = 0;
     if (text != 0) {
@@ -1454,11 +1583,10 @@ void Text_WordWrap(char *text, u8 mode)
             }
             if (end == line && !hard)
                 end = line + g_pCurFont->cols;
-            Text_EmitLineThunk((char *)line, end - line, mode);
+            Text_WalkLine(pass, (const char *)line, end - line, mode);
             end += skip;
             if (!hard) {
-                g_textCursorX = 0;
-                g_textCursorY += g_pCurFont->lineHeight;
+                pass.AdvanceLine();
                 while (*end == ' ')
                     end++;
                 if (*end)
@@ -1466,6 +1594,75 @@ void Text_WordWrap(char *text, u8 mode)
             }
         }
     }
+}
+
+/* The no-wrap print splits at control bytes below 0x20 and advances after a run reaching cols. */
+template <class Pass> static void Text_WalkNoWrap(Pass &pass, const char *text, u8 align)
+{
+    const char *line = text;
+    s32 emit;
+    s32 cnt = 0;
+    u8 ch;
+    s32 len = 0;
+    s32 pos = 0;
+    if (*text == 0)
+        return;
+    do {
+        line += len;
+        do {
+            do {
+                ch = line[pos];
+                pos++;
+                cnt++;
+                if (ch == 1) {
+                    pos += 3;
+                    ch = 0x21;
+                    cnt--;
+                }
+            } while (ch > 0x20);
+        } while (ch >= 0x20);
+        emit = cnt;
+        len = pos;
+        if (ch == 0) {
+            emit--;
+            len--;
+        }
+        Text_WalkLine(pass, line, emit, align);
+        if (line[len - 1] != '\n' && cnt >= g_pCurFont->cols)
+            pass.AdvanceLine();
+        cnt = 0;
+        pos = 0;
+    } while (line[len] != 0);
+}
+
+template <class Pass> static void Text_WalkPrint(Pass &pass, const char *text, u8 align, bool wrap)
+{
+    if (wrap)
+        Text_WalkWordWrap(pass, text, align);
+    else
+        Text_WalkNoWrap(pass, text, align);
+}
+
+static void Text_DrawPrint(const char *text, u8 align, bool wrap)
+{
+    if (!HudElement::Active() && text) {
+        TextMeasurePass bounds;
+        Text_WalkPrint(bounds, text, align, wrap);
+        if (bounds.x1 >= bounds.x0) {
+            HudElement hud(HudElement::Centre, HudElement::Centre,
+                           (bounds.x0 + bounds.x1) * 0.5f, (bounds.y0 + bounds.y1) * 0.5f);
+            TextDrawPass draw;
+            Text_WalkPrint(draw, text, align, wrap);
+            return;
+        }
+    }
+    TextDrawPass draw;
+    Text_WalkPrint(draw, text, align, wrap);
+}
+
+void Text_WordWrap(char *text, u8 mode)
+{
+    Text_DrawPrint(text, mode, true);
 }
 
 void Text_PrintfStyled(u8 align, s32 blink, const char *fmt, ...)
@@ -1808,69 +2005,8 @@ void Text_SetNoClipOnce()
  * 3 = right (by the count of printable characters). Stops at the window's bottom; leaves the cursor after the text. */
 void Text_EmitLine(const char *text, s32 n, u8 align)
 {
-    const u8 *p;
-    u32 col;
-    s32 idx;
-    s32 printable = 0;
-    s32 x;
-    s32 y;
-    float z;
-    u8 ch;
-    if (*text == 0 || n == 0)
-        return;
-    p = (const u8 *)text;
-    for (x = 0; x < n; x++) {
-        if (*p >= 0x20)
-            printable++;
-        if (*p == 1) {
-            p += 3;
-            x--;
-        }
-        p++;
-    }
-    switch (align) {
-        case TEXTALIGN_CONTINUE:
-            x = g_textCursorX;
-            break;
-        case TEXTALIGN_LEFT:
-            x = 0;
-            break;
-        case TEXTALIGN_CENTER:
-            x = (g_textWinW - printable * g_pCurFont->glyphWidth) / 2;
-            break;
-        case TEXTALIGN_RIGHT:
-            x = g_textWinW - printable * g_pCurFont->glyphWidth;
-            break;
-    }
-    y = g_textCursorY;
-    if (y >= g_textWinH)
-        return;
-    col = g_pCurFont->color;
-    z = g_screen.Draw2D_LayerToZ(g_textLayer);
-    for (idx = 0; idx < n; idx++) {
-        ch = *text++;
-        if (ch == '\n') {
-            y += g_pCurFont->lineHeight;
-            x = 0;
-        } else if (ch == ' ') {
-            x += g_pCurFont->glyphWidth;
-        } else if (ch == 1) {
-            col = 0;
-            ch = *text++;
-            col = ch;
-            ch = *text++;
-            col |= ch << 8;
-            ch = *text++;
-            col |= ch << 16;
-            idx--;
-        } else {
-            Text_DrawString(ch, x, y, z, col);
-            x += g_pCurFont->glyphWidth;
-        }
-    }
-    g_pCurFont->color = col;
-    g_textCursorX = x;
-    g_textCursorY = y;
+    TextDrawPass draw;
+    Text_WalkLine(draw, text, n, align);
 }
 
 void Text_EmitLineThunk(const char *text, s32 n, u8 align)
@@ -1882,50 +2018,5 @@ void Text_EmitLineThunk(const char *text, s32 n, u8 align)
  * 0x20 (newlines) and the end, and starts a new line after a run once the column count reaches the font's cols. */
 void Text_DrawNoWrap(const char *text, u8 align)
 {
-    const char *line = text;
-    s32 emit;
-    s32 d;
-    s32 cnt;
-    u8 ch;
-    s32 len;
-    s32 savedPos;
-    s32 pos;
-    savedPos = 0;
-    pos = 0;
-    len = 0;
-    d = 0;
-    cnt = 0;
-    emit = 0;
-    if (*text == 0)
-        return;
-    do {
-        line += len;
-        do {
-            d = cnt;
-            savedPos = pos;
-            do {
-                ch = line[pos];
-                pos++;
-                cnt++;
-                if (ch == 1) {
-                    pos += 3;
-                    ch = 0x21;
-                    cnt--;
-                }
-            } while (ch > 0x20);
-        } while (ch >= 0x20);
-        emit = cnt;
-        len = pos;
-        if (ch == 0) {
-            emit--;
-            len--;
-        }
-        Text_EmitLineThunk(line, emit, align);
-        if (line[len - 1] != '\n' && cnt >= g_pCurFont->cols) {
-            g_textCursorX = 0;
-            g_textCursorY += g_pCurFont->lineHeight;
-        }
-        cnt = 0;
-        pos = 0;
-    } while (line[len] != 0);
+    Text_DrawPrint(text, align, false);
 }

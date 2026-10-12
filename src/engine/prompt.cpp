@@ -250,6 +250,7 @@ s16 g_rectFooter[4] = {0x30, 0xcc, (s16)(ScreenWidthU16() - 0x60), 0x14};
  * touches between the id-list count and the icon; `spare` stands for it. */
 void Ui_DrawMemCardBackdrop(u8 level)
 {
+    HudElement hud(HudElement::Stretch);
     UiIcon icon;
     s32 spare;
     u16 count;

@@ -4,6 +4,7 @@
  * helpers' names. Angles: 4096 per turn. Speeds: units per second.
  */
 #include "sdw_types.h"
+#include "../engine/screen.h"
 struct Box16;
 class Instance;
 struct Animator;
@@ -705,6 +706,7 @@ void ScnControllable::StopMotion()
 
 void Wolf::DrawActionPrompt(ActionHit *primary, s32 heldAction, s32 viewPrompt, ActionHit *secondary, s32 show)
 {
+    HudElement hud(HudElement::Start, HudElement::Start);
     struct Work {
         char text[64];
         s32 height, phase, width, view;
@@ -784,6 +786,7 @@ void Wolf::DrawActionPrompt(ActionHit *primary, s32 heldAction, s32 viewPrompt, 
 }
 void Wolf::Hud_DrawItemPrompt(u16 *prompt, s32 show)
 {
+    HudElement hud(HudElement::Start, HudElement::End);
     struct Work {
         s32 phase, bottom, top, right, draw, dy, left, dx;
         u32 color;

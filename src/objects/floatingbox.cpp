@@ -6,6 +6,7 @@
 #include "../engine/scenaric.h"
 #include "../engine/maths.h"
 #include "../engine/id_list.h"
+#include "../engine/time.h"
 class Instance;
 struct Animator;
 u32 Anim_Start(Instance *instance, Animator *animator, u16 id, u32 options);
@@ -146,6 +147,7 @@ void FloatingBox::PostLoadInit()
     splashParams.sizeEnd = splashParams.sizeStart << 1;
     splashTime = 0;
     pushSpeed = 0;
+    pushRemainder = 0;
     pushAngle = 0;
     boxFlags = 0;
     SetTint(0);
@@ -161,6 +163,7 @@ void FloatingBox::PostLoadInit()
 
 void FloatingBox::Reset()
 {
+    pushRemainder = 0;
     boxFlags &= ~FBOX_F_RUNTIME_MASK;
     boxFlags &= ~FBOX_F_MOTION_MASK;
     if (!restoreUnset && IsInWorld() && !content->IsInWorld()) {
@@ -349,9 +352,11 @@ void FloatingBox::Update()
                 if (AnimFlags(ANIM_F_FINISHED))
                     PlayAnim(ACAISS02_ANIM_ACTION, 0, 0);
                 if (!(boxFlags & FBOX_F_PUSHED) && pushSpeed) {
-                    pushSpeed -= 35;
-                    if (pushSpeed < 0)
+                    pushSpeed += (s16)Time_ScaleStep(-35, pushRemainder);
+                    if (pushSpeed <= 0) {
                         pushSpeed = 0;
+                        pushRemainder = 0;
+                    }
                 }
                 w.direction.x = g_sinTable4096[pushAngle];
                 w.direction.y = 0;
@@ -386,6 +391,7 @@ void FloatingBox::Update()
                     }
                     if (!w.carried && (w.flow.x | w.flow.y | w.flow.z) == 0) {
                         pushSpeed = 0;
+                        pushRemainder = 0;
                         frameMove.x = 0;
                         frameMove.y = 0;
                         frameMove.z = 0;
@@ -455,9 +461,11 @@ sptr FloatingBox::HandleMessage(ScnObject *sender, u32 msgId, void *arg)
                     overlapCount = ObjGrid_QueryBoxOverlap(&worldBox, overlapList);
                     for (w.index = 0; w.index < overlapCount; w.index++) {
                         if (overlapList[w.index] == g_pWolf) {
-                            pushSpeed += 35;
-                            if (pushSpeed > 600)
+                            pushSpeed += (s16)Time_ScaleStep(35, pushRemainder);
+                            if (pushSpeed >= 600) {
                                 pushSpeed = 600;
+                                pushRemainder = 0;
+                            }
                             pushAngle = (s16)(uptr)arg;
                             boxFlags |= FBOX_F_PUSHED;
                             return 1;
@@ -577,6 +585,7 @@ void FloatingBox::SetState(u8 value, s32 effect)
                 splashParams.sheetIndex = 0;
                 splashParams.sizeEnd = splashParams.sizeStart << 1;
                 pushSpeed = 0;
+                pushRemainder = 0;
                 splashTime = 0;
             }
             SwapModel(&mainModel);

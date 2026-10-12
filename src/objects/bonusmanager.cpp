@@ -137,17 +137,48 @@ void BonusManager::PostLoadInit()
     Reset();
 }
 
+/* The row bounds and its drawing share the same virtual-screen geometry. */
+enum {
+    BONUS_ROW_X = 32,
+    BONUS_ROW_Y = 36,
+    BONUS_ROW_COUNT = 4,
+    BONUS_ROW_PITCH = 80,
+    BONUS_ROW_ICON_DX = -8,
+    BONUS_ROW_ICON_W = 63,
+    BONUS_ROW_ICON_H = 47,
+    BONUS_ROW_RIGHT_ARROW_DX = 400
+};
+
+static void BonusRowCentre(const void *, float &x, float &y)
+{
+    Sprite arrow;
+    arrow.LoadFromRes(DAV_IDI_IGLFLEC_);
+    float left = BONUS_ROW_X;
+    float right = BONUS_ROW_X + BONUS_ROW_RIGHT_ARROW_DX + arrow.widthMinus1;
+    float bottom = BONUS_ROW_Y + 2 * arrow.height;
+    float iconLeft = BONUS_ROW_X + BONUS_ROW_PITCH + BONUS_ROW_ICON_DX;
+    float iconRight = BONUS_ROW_X + BONUS_ROW_COUNT * BONUS_ROW_PITCH + BONUS_ROW_ICON_DX + BONUS_ROW_ICON_W;
+    if (iconLeft < left)
+        left = iconLeft;
+    if (iconRight > right)
+        right = iconRight;
+    if (BONUS_ROW_Y + BONUS_ROW_ICON_H > bottom)
+        bottom = BONUS_ROW_Y + BONUS_ROW_ICON_H;
+    x = (left + right) * 0.5f;
+    y = (BONUS_ROW_Y + bottom) * 0.5f;
+}
+
 void BonusManager::DrawBonusList()
 {
-    s16 originX = 32, originY = 36;
+    HudElement hud(HudElement::Centre, HudElement::Centre, BonusRowCentre);
     s8 index;
-    for (index = 0; index < 4; index++) {
+    for (index = 0; index < BONUS_ROW_COUNT; index++) {
         s16 rect[4];
         s8 icon;
-        rect[0] = (index + 1) * 80 - 8 + originX;
-        rect[1] = originY;
-        rect[2] = 63;
-        rect[3] = 47;
+        rect[0] = (index + 1) * BONUS_ROW_PITCH + BONUS_ROW_ICON_DX + BONUS_ROW_X;
+        rect[1] = BONUS_ROW_Y;
+        rect[2] = BONUS_ROW_ICON_W;
+        rect[3] = BONUS_ROW_ICON_H;
         Ui_DrawRectOutline(rect, cursor - firstVisible == index ? 0x4040f0 : 0xb0b0b0);
         icon = (s8)BonusIsUnlocked(firstVisible + index);
         iconQuads[icon].x = rect[0];
@@ -157,12 +188,13 @@ void BonusManager::DrawBonusList()
             iconQuads[icon].SetFade(4);
         iconQuads[icon].UiQuad_Draw(2);
     }
-    Ui_DrawScrollArrow(originX, originY, SPRFLIP_ROT90);
-    Ui_DrawScrollArrow(originX + 400, originY, SPRFLIP_ROT270);
+    Ui_DrawScrollArrow(BONUS_ROW_X, BONUS_ROW_Y, SPRFLIP_ROT90);
+    Ui_DrawScrollArrow(BONUS_ROW_X + BONUS_ROW_RIGHT_ARROW_DX, BONUS_ROW_Y, SPRFLIP_ROT270);
 }
 
 void BonusManager::DrawEntryInfo()
 {
+    HudElement hud(HudElement::Centre, HudElement::Centre, Text_ElementCentre);
     s16 rect[4];
     rect[0] = 32;
     rect[1] = 92;

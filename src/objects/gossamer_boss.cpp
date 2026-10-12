@@ -75,6 +75,7 @@ extern Wolf *g_pWolf;
 
 #define g_camPos (g_camera.pos)
 
+extern s32 g_dt;
 extern s32 g_dtMs;
 #define g_dtMs (*(u32 *)&g_dtMs)     /* cast kept: read here as unsigned, as the original does */
 extern u32 g_gameFlags;
@@ -435,8 +436,11 @@ void Gossamer_Boss::Update()
             }
             break;
         case GOSSBOSS_ST_SHAKE:
-            if (shakeTicks == 0x14 && onde != 0 && onde->HandleMessage(this, MSG_ONDE_START, 0) != 0)
-                Camera_StartShake(0x14, timerLimitMs << 1);
+            if (shakeTicks >= 0) {
+                shakeTicks -= g_dt;
+                if (shakeTicks < 0 && onde != 0 && onde->HandleMessage(this, MSG_ONDE_START, 0) != 0)
+                    Camera_StartShake(0x14, timerLimitMs << 1);
+            }
             if (AnimFlags(ANIM_F_FINISHED)) {
                 timerLimitMs = 500;
                 timerMs = 0;
@@ -448,7 +452,6 @@ void Gossamer_Boss::Update()
                 caughtWolf = 0;
                 break;
             }
-            shakeTicks++;
             break;
         case GOSSBOSS_ST_GUARD:
             SetFacing(HeadingTo(&g_pWolf->pos));
@@ -539,6 +542,11 @@ void Gossamer_Boss::SetState(u8 newState)
 {
     Vec3s toWolf;
 
+    /* Running inside the arena and guard's chase range starts the chase instead of the shockwave. */
+    if (state == GOSSBOSS_ST_GUARD && newState == GOSSBOSS_ST_SHAKE && wolfDist < 0x1c2 &&
+        IsInBox(&g_pWolf->pos, 0) && g_pWolf->HandleMessage(this, MSG_WOLF_IS_RUNNING, 0) != 0)
+        newState = GOSSBOSS_ST_RUN;
+
     toWolf.x = 0;
     toWolf.y = 0;
     toWolf.z = 0;
@@ -607,7 +615,8 @@ void Gossamer_Boss::SetState(u8 newState)
         case GOSSBOSS_ST_SHAKE:
             timerMs = 0;
             timerLimitMs = 0x5dc;
-            shakeTicks = 0;
+            // Preserve 20 original fixed steps; crossing below zero keeps the original trigger update.
+            shakeTicks = 20 * 0x88;
             PlayAnim(AGOSSA02_ANIM_SHAKE, 0, 0);
             break;
         case GOSSBOSS_ST_SPIN_END:
@@ -861,73 +870,42 @@ void Gossamer_Boss::ChaseStep()
     Translate(&frameDelta);
 }
 
-/* the turn accumulator. It measures the angle to Ralph (state 9) or the boss's own facing against the
- * reference angle taken when the turn started, adds the step to turnAccum, aborts the turn if the sense reverses and
- * enters `nextState` once turnNeeded has been swept. Losing Ralph (further than 500) drops back to state 0x10. */
+/* Count the shortest signed turn across the 0/0x1000 boundary; a stationary frame has no turn direction.
+ * In SPIN the angle to Ralph becomes the next frame's reference; otherwise ChaseStep or Update saved
+ * the boss's facing before turning. Losing Ralph (further than 500) drops back to guard. */
 void Gossamer_Boss::TurnStep(u8 nextState)
 {
-    struct {
-        s16 facing; /* -0x08 */
-        u16 step;   /* -0x06 */
-        s16 toWolf; /* -0x04 */
-        s16 angle;  /* -0x02 */
-    } w;
-
-    if (nextState == GOSSBOSS_ST_SPIN_ATTACK) {
-        w.toWolf = (s16)(Math_RadiansToAngle4096(
-                             atan2((double)g_pWolf->pos.x - (double)pos.x, (double)g_pWolf->pos.z - (double)pos.z)) &
-                         0xfff) +
-                   0x800;
-        w.angle = w.toWolf - 0x800;
-    } else {
-        w.facing = rot.y;
-        w.angle = w.facing - 0x800;
-    }
-    w.step = (u16)SDW_ABS(turnRefAngle - w.angle);
-    if (w.step > 0xbb8) {
-        if (turnRefAngle > 0xbb8 && w.angle < 0x3e8)
-            turnDir = 1;
-        else
-            turnDir = -1;
-    } else {
-        if (turnRefAngle < w.angle)
-            turnDir = 1;
-        else
-            turnDir = -1;
-    }
-    if (turnDirLatch != 0) {
-        if (turnDirLatch != turnDir) {
-            if (nextState == GOSSBOSS_ST_SPIN_ATTACK) {
-                SetState(GOSSBOSS_ST_GUARD);
-            } else {
+    ScnObject *wolf = g_pWolf;
+    s16 angle, turn;
+    if (nextState == GOSSBOSS_ST_SPIN_ATTACK)
+        angle = (s16)(Math_RadiansToAngle4096(
+                         (float)atan2((double)wolf->pos.x - (double)pos.x, (double)wolf->pos.z - (double)pos.z)) &
+                      0xfff);
+    else
+        angle = (s16)((rot.y - 0x800) & 0xfff);
+    turn = (s16)(((angle - turnRefAngle + 0x800) & 0xfff) - 0x800); /* -0x800..0x7ff, the short way round */
+    if (turn) {
+        turnDir = turn > 0 ? 1 : -1;
+        if (!turnDirLatch)
+            turnDirLatch = turnDir;
+        else if (turnDirLatch != turnDir) {
+            if (nextState != GOSSBOSS_ST_SPIN_ATTACK) {
                 turnAccum = 0;
                 turnDirLatch = 0;
                 return;
             }
+            SetState(GOSSBOSS_ST_GUARD);
         }
-    } else {
-        turnDirLatch = turnDir;
+        turnAccum = (s16)(turnAccum + (turn > 0 ? turn : -turn));
     }
-    if (w.step > 0xbb8) {
-        if (w.angle < 0x3e8)
-            turnAccum += w.angle;
-        else
-            turnAccum += (s16)(0x1000 - w.angle);
-        if (turnRefAngle < 0x3e8)
-            turnAccum += turnRefAngle;
-        else
-            turnAccum += (s16)(0x1000 - turnRefAngle);
-    } else {
-        turnAccum += (s16)w.step;
-    }
-    if (Vec3s_DistXZ(&pos, &g_pWolf->pos) > 0x1f4)
+    if (Vec3s_DistXZ(&pos, &wolf->pos) > 0x1f4)
         SetState(GOSSBOSS_ST_GUARD);
     if (turnAccum >= turnNeeded) {
         showSpinBody = 0;
         SetState(nextState);
     }
     if (nextState == GOSSBOSS_ST_SPIN_ATTACK)
-        turnRefAngle = w.angle;
+        turnRefAngle = angle;
 }
 
 /* walk to a point at 600 u/s with collide-and-slide (states 0x11 and 0x12). Arriving switches state, and

@@ -1,5 +1,6 @@
 /* Menu. A flat MenuPage tree. */
 #include "sdw_types.h"
+#include "../engine/screen.h"
 #include "sdw_enums.h"
 #include "sdw_classes.h"
 #include "sdw_global_views.h"
@@ -227,6 +228,7 @@ void Menu_GoBack()
 }
 u32 Menu_Update(s32 layout, u8 align)
 {
+    HudElement hud(HudElement::Centre, HudElement::Centre, Text_ElementCentre);
     u32 a = 0;
     s16 b = 0;
     u8 c;

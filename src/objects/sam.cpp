@@ -2641,6 +2641,7 @@ void Sam::Update()
 /* Sam_DrawZoneIndicator; 483 compared bytes including any local tables. */
 void Sam::DrawZoneIndicator()
 {
+    HudElement hud(HudElement::End, HudElement::Start);
     struct HudWork {
         unsigned short unused108;
         SamScreenGeometry screenGeometry;

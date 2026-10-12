@@ -471,6 +471,7 @@ void RollingCarpet::InitBeltScroll(s8 step)
     uptr *entries;
     u16 count;
     entries = IdList_FindWithCount(DAV_IDI_ITPDESS_, &count);
+    delete g_rollingCarpetBeltBackup;
     g_rollingCarpetBeltBackup =
         TexScroll_Setup(&g_rollingCarpetBeltScroll, &g_pDav->header->dir->bitmaps[*(u16 *)entries[0]], step);
 }

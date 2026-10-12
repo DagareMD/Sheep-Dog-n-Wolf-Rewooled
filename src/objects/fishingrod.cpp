@@ -476,7 +476,7 @@ void CompositeRod::Render(Camera *view)
             ((FlatVertex *)g_fishingLinePoly.verts)[2].diffuse = 0x80808080;
         ((FlatVertex *)g_fishingLinePoly.verts)[0].specular = ((FlatVertex *)g_fishingLinePoly.verts)[1].specular =
             ((FlatVertex *)g_fishingLinePoly.verts)[2].specular = 0xff000000;
-        w.width = g_screen.ScaleX(1);
+        w.width = HudElement::SizeX(1);
         memcpy(g_fishingLinePoly.verts, w.vertices, 0x10);
         memcpy((FlatVertex *)g_fishingLinePoly.verts + 1, w.vertices, 0x10);
         memcpy((FlatVertex *)g_fishingLinePoly.verts + 2, w.vertices + 1, 0x10);

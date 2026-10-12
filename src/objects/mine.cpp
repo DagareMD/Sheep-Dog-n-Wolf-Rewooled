@@ -7,6 +7,7 @@
 /* --- DefusableMine: */
 /* Uses the Mine/DefusableMine SetState(u8). */
 #include "sdw_types.h"
+#include "../engine/screen.h"
 #include "sdw_enums.h"
 #include "scenaric_props.h"
 class Instance;
@@ -704,6 +705,7 @@ inline s32 PropS32(void *record, u32 off)
 /* DefusableMine_DrawGlyph */
 void DefusableMine::DrawGlyph(s32 glyph)
 {
+    HudElement hud(HudElement::Start, HudElement::Start);
     s32 p =
         g_defusePanelSprite.widthMinus1 + 16 - (g_defuseGlyphSprite.widthMinus1 >> 1) + g_defuseButtonTable[glyph].x;
     s32 q = g_defusePanelSprite.height + 32 - (g_defuseGlyphSprite.height >> 1) + g_defuseButtonTable[glyph].y;
@@ -713,6 +715,7 @@ void DefusableMine::DrawGlyph(s32 glyph)
 /* DefusableMine_DrawPanel. Lamp Y intentionally uses the glyph width. */
 void DefusableMine::DrawPanel()
 {
+    HudElement hud(HudElement::Start, HudElement::Start);
     s32 p = g_defusePanelSprite.widthMinus1 + 16;
     s32 q;
     s32 r = g_defusePanelSprite.height + 32;
@@ -739,6 +742,7 @@ void DefusableMine::DrawPanel()
 /* DefusableMine_DrawBeatLights */
 void DefusableMine::DrawBeatLights()
 {
+    HudElement hud(HudElement::Start, HudElement::Start);
     s32 p = g_defusePanelSprite.widthMinus1 - 7 - g_defuseBeatLightSprite.widthMinus1 / 2;
     s32 q;
     s32 r = g_defusePanelSprite.height + 55 - g_defuseBeatLightSprite.height / 2;

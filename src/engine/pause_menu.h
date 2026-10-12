@@ -54,6 +54,7 @@ void PauseMenu_PageSoundOptions(u8 msg, MenuPage *self);
 void PauseMenu_QuitConfirm(u8 msg, MenuPage *item);
 void PauseMenu_Update(); /* pause-menu update (draw, or PauseMenu_Exit) */
 void PausedMenu_Build();
+void PausedMenu_ClearItems();
 void PausedMenu_ItemPaused(u8 msg, MenuPage *item);
 void PausedMenu_Open(); /* the other pause-menu opener (sibling of PauseMenu_Open) */
 

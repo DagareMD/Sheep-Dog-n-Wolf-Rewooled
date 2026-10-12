@@ -25,6 +25,7 @@
 
 #define SDW_MEMBERS_Mat44 Mat44(); /* Mat44_Ctor, empty and out of line */
 #include "sdw_types.h"
+#include "../engine/screen.h"
 #include "sdw_enums.h"
 #include "scenaric_props.h"
 struct Box;
@@ -869,6 +870,7 @@ void PrayingGhost::Reset()
 #undef SDW_INLINE_FREE_SCREENWIDTHU16
 void PrayingGhost::DrawAlertIcon()
 {
+    HudElement hud(HudElement::End, HudElement::Start);
     s16 top15, bottom8, right14, left0;
     struct HudWork {
         Camera camera;

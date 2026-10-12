@@ -1,4 +1,5 @@
 #include "sdw_types.h"
+#include "../engine/screen.h"
 #include "sdw_enums.h"
 #include "scenaric_props.h"
 class Instance;
@@ -122,6 +123,7 @@ void Rocket::SetState(u8 newState)
 
 void Rocket::DrawGauges()
 {
+    HudElement hud(HudElement::End, HudElement::Start);
     struct {
         s32 amount, right, height, top, left;
     } w;

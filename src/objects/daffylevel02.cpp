@@ -1,4 +1,5 @@
 #include "sdw_types.h"
+#include "../engine/screen.h"
 #include "sdw_enums.h"
 #include "scenaric_props.h"
 class Instance;
@@ -598,6 +599,7 @@ void DaffyLevel02::InitHeadRecord(u16 *rec)
 
 void DaffyLevel02::DrawAlertIcon()
 {
+    HudElement hud(HudElement::End, HudElement::Start);
     /* the camera stays contiguous, including its real Mat44 constructors. */
     s16 top15, bottom8;
     s32 flags19;

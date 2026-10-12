@@ -1,4 +1,5 @@
 #include "sdw_types.h"
+#include "screen.h"
 #include "sdw_enums.h"
 
 #include "sdw_classes.h"
@@ -74,6 +75,7 @@ s32 Countdown_Format(char *out)
 /* the tint it computes (towards red below 30 s) is never used. */
 void Countdown_DrawHud()
 {
+    HudElement hud(HudElement::Start, HudElement::Start);
     char msg[16];
     s16 box[4];
     s32 color;

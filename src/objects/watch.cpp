@@ -16,6 +16,7 @@
 
 #define SDW_MEMBERS_Mat44 Mat44(); /* Mat44_Ctor, empty and out of line */
 #include "sdw_types.h"
+#include "../engine/screen.h"
 #include "sdw_enums.h"
 #include "scenaric_props.h"
 class Instance;
@@ -106,13 +107,16 @@ void Watch::Update()
             timeLeft = 0;
         xy[0] = 0x23;
         xy[1] = 0x20;
-        RenderEx(&hudCam, hudBufToggle ? hudPrimBuf[0] : hudPrimBuf[1], 100, 0x180, xy);
-        hudBufToggle = !hudBufToggle;
-        digits.Draw(g_screenLayerBase + 8, 0x3f, 0x18, digits.width + 0x3f, digits.height + 0x18, 0x808080,
-                    timeLeft / 0xa000 % 10, 0);
-        digits.Draw(g_screenLayerBase + 8, 0x51, 0x18, digits.width + 0x51, digits.height + 0x18, 0x808080,
-                    timeLeft / 0x1000 % 10, 0);
-        g_spriteCrayon2.Draw(g_screenLayerBase + 9, 8, 0x10, 0x6b, 0x30, g_uiTintColor, 0);
+        {
+            HudElement hud(HudElement::Start, HudElement::Start);
+            RenderEx(&hudCam, hudBufToggle ? hudPrimBuf[0] : hudPrimBuf[1], 100, 0x180, xy);
+            hudBufToggle = !hudBufToggle;
+            digits.Draw(g_screenLayerBase + 8, 0x3f, 0x18, digits.width + 0x3f, digits.height + 0x18, 0x808080,
+                        timeLeft / 0xa000 % 10, 0);
+            digits.Draw(g_screenLayerBase + 8, 0x51, 0x18, digits.width + 0x51, digits.height + 0x18, 0x808080,
+                        timeLeft / 0x1000 % 10, 0);
+            g_spriteCrayon2.Draw(g_screenLayerBase + 9, 8, 0x10, 0x6b, 0x30, g_uiTintColor, 0);
+        }
         if ((timeLeft * 1000 >> 12) < 50000)
             vol = 127 - (timeLeft * 1000 >> 12) * 127 / 50000;
         else

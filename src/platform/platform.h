@@ -120,5 +120,13 @@ const char *Platform_JoystickName(int index);
 int Platform_OpenJoystick(int index);
 void Platform_CloseJoystick();
 int Platform_ReadJoystick(int axes[5], unsigned char *buttons, int buttonCount);
+enum {
+    PLATFORM_DPAD_UP = 1,
+    PLATFORM_DPAD_RIGHT = 2,
+    PLATFORM_DPAD_DOWN = 4,
+    PLATFORM_DPAD_LEFT = 8,
+};
+/* Held D-pad directions, kept separate from the gameplay buttons and axes. Returns 0 without focus or a pad. */
+unsigned Platform_ReadJoystickDpad();
 
 #endif

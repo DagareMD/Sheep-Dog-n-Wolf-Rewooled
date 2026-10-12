@@ -1,4 +1,5 @@
 #include "sdw_types.h"
+#include "../engine/screen.h"
 #include "sdw_enums.h"
 #include "scenaric_props.h"
 class Instance;
@@ -219,6 +220,7 @@ sptr MineDetector::HandleMessage(ScnObject *sender, u32 msgId, void *arg)
 /* MineDetector_DrawGauge */
 void MineDetector::DrawGauge()
 {
+    HudElement hud(HudElement::Start, HudElement::End);
     u32 p;
     s32 q;
     s32 r;

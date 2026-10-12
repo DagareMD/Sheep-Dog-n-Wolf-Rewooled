@@ -27,6 +27,7 @@
 #include "../sdk/crt.h"
 
 #include "bs_io.h"
+#include "fixed_math.h"
 
 /* ------------------------------------------------------------------------------------------------ BsFile */
 
@@ -377,7 +378,7 @@ int BsFile::BsDecode_Kind0_1(BsPolyFlat *dest, int firstIndex, int bias)
                         dest[i + firstIndex].idx[1] = ReadU8(1) + bias;
                         dest[i + firstIndex].idx[2] = ReadU8(1) + bias;
                         ReadU8(1);
-                        dest[i + firstIndex].colour = ReadRgbHalved(1);
+                        dest[i + firstIndex].colour = ReadRgbExpanded(1);
                     }
                     decoded += count;
                     firstIndex += count;
@@ -392,8 +393,8 @@ int BsFile::BsDecode_Kind0_1(BsPolyFlat *dest, int firstIndex, int bias)
                         dest[firstIndex + i * 2].idx[2] = ReadU8(1) + bias;
                         dest[firstIndex + i * 2].idx[1] = ReadU8(0) + bias;
                         dest[firstIndex + i * 2 + 1].idx[2] = ReadU8(1) + bias;
-                        dest[firstIndex + i * 2].colour = ReadRgbHalved(0);
-                        dest[firstIndex + i * 2 + 1].colour = ReadRgbHalved(1);
+                        dest[firstIndex + i * 2].colour = ReadRgbExpanded(0);
+                        dest[firstIndex + i * 2 + 1].colour = ReadRgbExpanded(1);
                     }
                     decoded += count * 2;
                     firstIndex += count * 2;
@@ -440,9 +441,9 @@ int BsFile::BsDecode_Kind2_3(BsPolyGouraud *dest, int firstIndex, int bias)
                         dest[i + firstIndex].idx[1] = ReadU8(1) + bias;
                         dest[i + firstIndex].idx[2] = ReadU8(1) + bias;
                         ReadU8(1);
-                        dest[i + firstIndex].colour[0] = ReadRgbHalved(1);
-                        dest[i + firstIndex].colour[1] = ReadRgbHalved(1);
-                        dest[i + firstIndex].colour[2] = ReadRgbHalved(1);
+                        dest[i + firstIndex].colour[0] = ReadRgbExpanded(1);
+                        dest[i + firstIndex].colour[1] = ReadRgbExpanded(1);
+                        dest[i + firstIndex].colour[2] = ReadRgbExpanded(1);
                     }
                     decoded += count;
                     firstIndex += count;
@@ -457,12 +458,12 @@ int BsFile::BsDecode_Kind2_3(BsPolyGouraud *dest, int firstIndex, int bias)
                         dest[firstIndex + i * 2].idx[2] = ReadU8(1) + bias;
                         dest[firstIndex + i * 2].idx[1] = ReadU8(0) + bias;
                         dest[firstIndex + i * 2 + 1].idx[2] = ReadU8(1) + bias;
-                        dest[firstIndex + i * 2].colour[0] = ReadRgbHalved(0);
-                        dest[firstIndex + i * 2 + 1].colour[0] = ReadRgbHalved(1);
-                        dest[firstIndex + i * 2 + 1].colour[1] = ReadRgbHalved(1);
-                        dest[firstIndex + i * 2].colour[2] = ReadRgbHalved(1);
-                        dest[firstIndex + i * 2].colour[1] = ReadRgbHalved(0);
-                        dest[firstIndex + i * 2 + 1].colour[2] = ReadRgbHalved(1);
+                        dest[firstIndex + i * 2].colour[0] = ReadRgbExpanded(0);
+                        dest[firstIndex + i * 2 + 1].colour[0] = ReadRgbExpanded(1);
+                        dest[firstIndex + i * 2 + 1].colour[1] = ReadRgbExpanded(1);
+                        dest[firstIndex + i * 2].colour[2] = ReadRgbExpanded(1);
+                        dest[firstIndex + i * 2].colour[1] = ReadRgbExpanded(0);
+                        dest[firstIndex + i * 2 + 1].colour[2] = ReadRgbExpanded(1);
                     }
                     decoded += count * 2;
                     firstIndex += count * 2;
@@ -509,7 +510,7 @@ int BsFile::BsDecode_Kind10_11(BsPolyBlendFlat *dest, int firstIndex, int bias)
                         dest[i + firstIndex].idx[1] = ReadU8(1) + bias;
                         dest[i + firstIndex].idx[2] = ReadU8(1) + bias;
                         ReadU8(1);
-                        dest[i + firstIndex].colour = ReadRgbHalved(1);
+                        dest[i + firstIndex].colour = ReadRgbExpanded(1);
                         dest[i + firstIndex].blendMode = ReadU32(1);
                     }
                     decoded += count;
@@ -525,8 +526,8 @@ int BsFile::BsDecode_Kind10_11(BsPolyBlendFlat *dest, int firstIndex, int bias)
                         dest[firstIndex + i * 2].idx[2] = ReadU8(1) + bias;
                         dest[firstIndex + i * 2].idx[1] = ReadU8(0) + bias;
                         dest[firstIndex + i * 2 + 1].idx[2] = ReadU8(1) + bias;
-                        dest[firstIndex + i * 2].colour = ReadRgbHalved(0);
-                        dest[firstIndex + i * 2 + 1].colour = ReadRgbHalved(1);
+                        dest[firstIndex + i * 2].colour = ReadRgbExpanded(0);
+                        dest[firstIndex + i * 2 + 1].colour = ReadRgbExpanded(1);
                         dest[firstIndex + i * 2].blendMode = ReadU32(0);
                         dest[firstIndex + i * 2 + 1].blendMode = ReadU32(1);
                     }
@@ -576,9 +577,9 @@ int BsFile::BsDecode_Kind12(BsPolyBlendGouraud *dest, int firstIndex, int bias)
                         dest[i + firstIndex].idx[1] = ReadU8(1) + bias;
                         dest[i + firstIndex].idx[2] = ReadU8(1) + bias;
                         ReadU8(1);
-                        dest[i + firstIndex].colour[0] = ReadRgbHalved(1);
-                        dest[i + firstIndex].colour[1] = ReadRgbHalved(1);
-                        dest[i + firstIndex].colour[2] = ReadRgbHalved(1);
+                        dest[i + firstIndex].colour[0] = ReadRgbExpanded(1);
+                        dest[i + firstIndex].colour[1] = ReadRgbExpanded(1);
+                        dest[i + firstIndex].colour[2] = ReadRgbExpanded(1);
                         dest[i + firstIndex].blendMode = ReadU32(1);
                     }
                     decoded += count;
@@ -594,12 +595,12 @@ int BsFile::BsDecode_Kind12(BsPolyBlendGouraud *dest, int firstIndex, int bias)
                         dest[firstIndex + i * 2].idx[2] = ReadU8(1) + bias;
                         dest[firstIndex + i * 2].idx[1] = ReadU8(0) + bias;
                         dest[firstIndex + i * 2 + 1].idx[2] = ReadU8(1) + bias;
-                        dest[firstIndex + i * 2].colour[0] = ReadRgbHalved(0);
-                        dest[firstIndex + i * 2 + 1].colour[0] = ReadRgbHalved(1);
-                        dest[firstIndex + i * 2 + 1].colour[1] = ReadRgbHalved(1);
-                        dest[firstIndex + i * 2].colour[2] = ReadRgbHalved(1);
-                        dest[firstIndex + i * 2].colour[1] = ReadRgbHalved(0);
-                        dest[firstIndex + i * 2 + 1].colour[2] = ReadRgbHalved(1);
+                        dest[firstIndex + i * 2].colour[0] = ReadRgbExpanded(0);
+                        dest[firstIndex + i * 2 + 1].colour[0] = ReadRgbExpanded(1);
+                        dest[firstIndex + i * 2 + 1].colour[1] = ReadRgbExpanded(1);
+                        dest[firstIndex + i * 2].colour[2] = ReadRgbExpanded(1);
+                        dest[firstIndex + i * 2].colour[1] = ReadRgbExpanded(0);
+                        dest[firstIndex + i * 2 + 1].colour[2] = ReadRgbExpanded(1);
                         dest[firstIndex + i * 2].blendMode = ReadU32(0);
                         dest[firstIndex + i * 2 + 1].blendMode = ReadU32(1);
                     }
@@ -1280,17 +1281,10 @@ u32 BsFile::ReadU24BE(u8 advance)
     return v;
 }
 
-/* the same colour with each channel halved and scaled by 1.03 (so 255 -> 130, not 127). */
-u32 BsFile::ReadRgbHalved(u8 advance)
+/* the whole colour, expanded by ColorFix's 1.03 factor for untextured faces. */
+u32 BsFile::ReadRgbExpanded(u8 advance)
 {
-    u32 v;
-
-    v = (u32)((data[cursor + 2] >> 1) * 1.03f);
-    v += (u32)((data[cursor + 1] >> 1) * 1.03f) << 8;
-    v += (u32)((data[cursor] >> 1) * 1.03f) << 16;
-    if (advance == 1)
-        cursor += 4;
-    return v;
+    return Color_ExpandPs1(ReadU24BE(advance));
 }
 
 /* (no callers) */

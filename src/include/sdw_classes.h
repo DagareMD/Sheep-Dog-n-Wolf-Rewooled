@@ -1296,7 +1296,7 @@ public:
     u16 ReadU16(u8 advance);
     u32 ReadU32(u8 advance);
     u32 ReadU24BE(u8 advance);
-    u32 ReadRgbHalved(u8 advance);
+    u32 ReadRgbExpanded(u8 advance);
     void WriteU8(u8 value, u8 advance);
     void WriteU16(u16 value, u8 advance);
     void WriteU32(u32 value, u8 advance);
@@ -1335,7 +1335,7 @@ public:
     SDW_MEMBERS_BsPolyBlendFlat
 #endif
     virtual ~BsPolyBlendFlat();                       // BsPolyBlendFlat_VectorDeletingDtor
-    u32 colour;                                    // flat colour from BsFile_ReadRgbHalved (BsDecode_Kind10_11)
+    u32 colour;                                    // flat colour from BsFile_ReadRgbExpanded (BsDecode_Kind10_11)
     u32 blendMode;                                 // a u32 read straight from the file (BsDecode_Kind10_11); RenderPoly_InitFromBsBlendFlat swit
 };
 
@@ -1345,7 +1345,7 @@ public:
     SDW_MEMBERS_BsPolyBlendGouraud
 #endif
     virtual ~BsPolyBlendGouraud();                    // BsPolyBlendGouraud_VectorDeletingDtor
-    u32 colour[3];                                 // per-vertex colours from BsFile_ReadRgbHalved (BsDecode_Kind12)
+    u32 colour[3];                                 // per-vertex colours from BsFile_ReadRgbExpanded (BsDecode_Kind12)
     u32 blendMode;                                 // a u32 read straight from the file (BsDecode_Kind12); RenderPoly_InitFromBsBlendGouraud swit
 };
 
@@ -1355,7 +1355,7 @@ public:
     SDW_MEMBERS_BsPolyFlat
 #endif
     virtual ~BsPolyFlat();                            // BsPolyFlat_VectorDeletingDtor
-    u32 colour;                                    // flat colour from BsFile_ReadRgbHalved, stored
+    u32 colour;                                    // flat colour from BsFile_ReadRgbExpanded, stored
 };
 
 class BsPolyGouraud : public PolyTri {
@@ -1364,7 +1364,7 @@ public:
     SDW_MEMBERS_BsPolyGouraud
 #endif
     virtual ~BsPolyGouraud();                         // BsPolyGouraud_VectorDeletingDtor
-    u32 colour[3];                                 // per-vertex colours from BsFile_ReadRgbHalved: BsDecode_Kind2_3 stores them at +0x10/+0x14/+0x18 of a
+    u32 colour[3];                                 // per-vertex colours from BsFile_ReadRgbExpanded: BsDecode_Kind2_3 stores them at +0x10/+0x14/+0x18 of a
 };
 
 class BsPolyTexFlat : public PolyTri {
@@ -1877,6 +1877,7 @@ public:
     u32 noHitDir;                                  // static hit with a zero normal: the explosion plays undirected anim 1
     Vec3s hitDir;                                  // orientation for the anim-2 explosion (hit normal or last frameDelta)
     u16 explodeSound;                              // Sound_Play(0x44) handle
+    s32 debrisRemainder = 0;
 };
 
 class CannonBall2 : public ScnMobile {
@@ -1988,6 +1989,8 @@ public:
     Box *activationBox;                            // PROPERTY _ACTIVATIONBOX (tested in XZ only)
     ScnObject *barrel;                             // PROPERTY CANONDUMMY: the CanonDummy barrel model, rotated by ApplyAim
     ScnObject *ball;                               // PROPERTY CANNONBALL: the CannonBall driven by messages
+    s32 pitchRemainder = 0;
+    s32 yawRemainder = 0;
 };
 
 class Case : public ScnBody {
@@ -3722,7 +3725,7 @@ public:
     Box *activationBox;                            // PROPERTY_FALLINGROCK_ACTIVATIONBOX (0). Triggers on the Wolf's x and z only â€” the vertical pair (+6/
     u32 camHoldMs;                                 // How long the scripted camera is held after landing. Hard-coded to 500; the designers' PR
     u32 camElapsedMs;                              // Milliseconds accumulated (g_dtMs) since the rock landed, compared against camHoldMs to end the shot.
-    u16 fallTicksLeft;                             // Remaining descent steps. Init 5; each Update tick in state 1 translates 400 units DOWN, undoing exac
+    u16 fallTicksLeft;                             // Game-clock ticks until impact: five reference steps of descent, then one before impact.
     u16 impactSoundHandle;                         // Sound_Play handle for the impact sound (id 0x44). Zeroed at init and stored on landing, but never re
 };
 
@@ -3859,6 +3862,7 @@ public:
     InlineEmitter4 splashEmitter;                  // 4-slot inline emitter; the count byte is the emitter's own +0x21, i.e. this+0x241, not th
     EmitterFadeParams splashParams;                // PostLoadInit sets sheetIndex = 1, not 0 â€” SetState(1) is the one that sets 0 a
     u32 splashTime;                                // named from its uses in src/objects/floatingbox.cpp (the name and access width come from the code the
+    s32 pushRemainder = 0;
 };
 
 struct FlockScentSource {
@@ -3927,6 +3931,7 @@ public:
     ScnObject *obj;                                // the Wolf, the Sheep or the SlidingIceCube
     s32 waitingCrane;                              // 1 once the crane has been sent msg 0x37 for it at the last node; MoveCargo then does noth
     s32 done;                                      // 1 once the crane has taken it (msg 0x3e); FrozenRiver_UpdateCargo skips it
+    s32 spinRemainder = 0;
 };
 
 class FrozenRiver : public ScnLogic {
@@ -4137,7 +4142,7 @@ public:
     u8 baseG;                                      // saved tint byte 1
     u8 baseB;                                      // saved tint byte 2
     u8 _pad0db[0x1];
-    u8 fadeSteps;                                  // 10 when a fade starts, decremented once per frame; at 0 the end colour is writ
+    u8 fadeSteps;                                  // Ten reference steps per fade; at zero the end colour is written.
     u32 tintScratch;                               // member used as scratch while packing tintB/tintG/tintR into the tint colour
     u8 _pad0e4[0x4];
     s32 wolfDist;                                  // Vec3s_DistXZ(wolf.pos, pos) each frame, forced to 3000 while the Wolf is in the ghost cos
@@ -4153,6 +4158,7 @@ public:
     s32 showCapturedSheep;                         // 1 while the capture animation runs; Render draws the embedded body only then and only in
     s32 fireballTimerMs;                           // 1150 ms at capture, counted down by g_dtMs; at 0 the FireBall is told 0x5981 every frame
     u16 soundHandle;                               // handle of the last Sound_Play, stopped before the next one
+    s32 fadeRemainder = 0;
 };
 
 class GhostCostume : public ScnBody {
@@ -4263,7 +4269,7 @@ public:
     u8 state;                                      // GossamerBossState; switch subject of Update and of SetState (0x4507
     u8 prevState;                                  // previous state saved by SetState
     u8 pathIndex;                                  // index into path->pts, advanced by msg 0x43 ( add al,1) and read by the return step (
-    u8 shakeTicks;
+    s16 shakeTicks;                                // remaining game-clock ticks until the shockwave; negative after triggering
     s16 hitIndex;                                  // phase counter: 0xffff at Init/Reset, +1 per msg 0x43 ( add ax,1); indexes phaseBo
     s16 phaseOverlapX;                             // pos.x - phaseBoxes[hitIndex]->max.x when the last phase box is left
     s16 turnAccum;                                 // turn accumulated by TurnStep in 4096ths; compared with turnNeeded
@@ -5562,7 +5568,7 @@ public:
     u8 monoState;                                  // name and access width as src/objects/monolithe.cpp uses the field
     u8 previousState;                              // name and access width as src/objects/monolithe.cpp uses the field
     u16 riderCount;                                // name and access width as src/objects/monolithe.cpp uses the field
-    u16 spinTicks;
+    u16 spinTicks;                                 // elapsed game-clock ticks through the sixteen-reference-step turn
     u16 ghostCount;                                // name and access width as src/objects/monolithe.cpp uses the field
     u8 _pad06c[0x4];
     s32 freezeAccepted;                            // name and access width as src/objects/monolithe.cpp uses the field
@@ -5918,6 +5924,7 @@ public:
     s32 exitBoxSpan;                               // name and access width as src/objects/pipe2.cpp uses the field
     u32 launchDelay;                               // name and access width as src/objects/pipe2.cpp uses the field
     u32 launchStart;                               // name and access width as src/objects/pipe2.cpp uses the field
+    s32 spinRemainder = 0;
 };
 
 struct Trajectory {
@@ -5966,6 +5973,9 @@ public:
     void SetComputeSortZ(u8 enable);
     s32 CreateTexture(const char *fileName, u32 index, u32 width, u32 height, u32 format);
     s32 LoadTexturePages(const char *path);
+    void ConfigureOutlineTexture(const Vdx7Record &rect);
+    void ConfigureOutlineMesh(Mesh *mesh, const u8 *outlineFaces);
+    void UpdateObjectOutlines();
     long Render_RestoreLostSurfaces();
     bool IsImmediateTexture(u32 textureIndex);
     void Render_BeginFrame();
@@ -5996,6 +6006,10 @@ public:
     void *lineBatchVerts;                          // line batch: a fixed 96000-byte buffer = 4000 vertices of 0x18 bytes = 2000 lines, drawn as D3DPT_LIN
     u32 lineBatchCount;                            // lines queued in the line batch; zeroed by the flush and by the discard path of Render_EndFrame
     u32 lineStateFlags;                            // RenderStateFlags for the line batch, 0x121 = RSF_ANTIALIAS | RSF_DITHER | RSF_COLORVERTEX
+    struct OutlineTexture;
+    OutlineTexture *outlineTextures;               // original texels of the explicitly selected outline textures
+    struct OutlineMesh;
+    OutlineMesh *outlineMeshes;                    // non-owning mesh references and their normal/outlined draw counts
 };
 
 class PorkyLevel01 : public ScnMobile {
@@ -6965,6 +6979,7 @@ public:
     u32 talkedFlag;                                // 1 after a dialogue. Blocks re-talk until the Wolf is > 600 from guardPost (boat) or > 400 from nearJ
     u32 boatTextToggle;                            // alternates TEXT_IN_BOAT1/2 between boat talks
     u32 jailWarningGiven;                          // set while TEXT_IN_JAIL is spoken. Afterwards the Wolf entering jailBox makes jailed Sam draw (state
+    s32 circleRemainder = 0;
 };
 
 class SceneSheepPanel : public ScnBody {
@@ -7755,6 +7770,8 @@ public:
     Box *normalBox;                                // NORMALBOXID (Scn_GetPropBox)
     Box *reverseBox;                               // REVERSEBOXID (Scn_GetPropBox); tested before normalBox
     s32 wolfFrozen;                                // Wolf msg 0xE reply at start; msg 0xF sent on exit; cleared when another object takes the freeze (msg
+    s32 yawRemainder = 0;
+    s32 pitchRemainder = 0;
 };
 
 struct TexScroll {
@@ -8289,9 +8306,9 @@ struct WarHeader {
 public:
     u8 _pad000[0x4];
     char version[4];                               // 'V2.6'. Load_WAR prefix-compares it with sprintf('V%u.%u', 2, 6), temporarily NUL-ing +8. The same m
-    u8 clearR;                                     // red of the level clear/fog colour. Load_DAVnWAR builds (r>>1)<<16 | (g>>1)<<8 | (b>>1) and passes it
-    u8 clearG;                                     // green of the clear/fog colour (halved at use)
-    u8 clearB;                                     // blue of the clear/fog colour (halved at use)
+    u8 clearR;                                     // red of the level clear/fog colour; Load_DAVnWAR expands the whole RGB by 1.03
+    u8 clearG;                                     // green of the clear/fog colour
+    u8 clearB;                                     // blue of the clear/fog colour
     u32 resourceCount;                             // number of u32 entries in the table at +0x10; the loop bound of Load_WAR, Load_WarMeshes and every Lo
 };
 
@@ -8719,6 +8736,8 @@ public:
     u8 camOverride;                                // 0xFF none
     u32 fxFlags;                                   // attached-effect flags: 4 ice block floating, 8 dizzy fx, 0x4000 costume puff, 0x100000 ice block gro
     u32 flags;                                     // bits seen here: 0x200000 / lock the stick heading to one axis, 0x400/0xC00 resp. 0/0x800, 0
+    s32 stuckFallTicks;                            // gameplay ticks at unchanged Y while in an ordinary falling state (4096 ticks/s)
+    s16 stuckFallY;                                // Y at the previous falling-guard update
 };
 
 struct WolfArcScratch {
@@ -9098,6 +9117,7 @@ public:
     u8 subState;                                   // ElasticSubState (state 3 only)
     u8 isWolfRider;
     u8 wolfFrozen;                                 // 1 if this elastic froze the Wolf (msg 0xe) for its launch camera
+    s32 tensionRemainder = 0;
 };
 
 class seesaw : public ScnBody {

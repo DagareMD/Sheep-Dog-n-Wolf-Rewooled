@@ -114,6 +114,7 @@ public:
     /* ---- state ---- */
     virtual void SetStateFlags(u32 rsf) = 0;   /* turns on each RSF_* bundle in rsf (Render_SetStateFlags) */
     virtual void ClearStateFlags(u32 rsf) = 0; /* turns them off again (Render_ClearStateFlags) */
+    virtual void SetTextureModulation2X(bool enabled) = 0; /* textured RGB: MODULATE2X or MODULATE; alpha unchanged */
     virtual void EnableAlphaBlend(int on) = 0;
     virtual void SetBlendFunc(u32 src, u32 dst) = 0; /* RD_BLEND_* factors */
     virtual void SetFog(u32 color, float start, float end) = 0; /* linear per-vertex fog, as the original sets it */

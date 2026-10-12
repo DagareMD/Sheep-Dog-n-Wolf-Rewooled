@@ -491,6 +491,22 @@ void Platform_CloseJoystick()
     s_gamepad = 0;
 }
 
+unsigned Platform_ReadJoystickDpad()
+{
+    if (!s_gamepad || !SDL_GamepadConnected(s_gamepad) || !Platform_IsActive())
+        return 0;
+    unsigned directions = 0;
+    if (SDL_GetGamepadButton(s_gamepad, SDL_GAMEPAD_BUTTON_DPAD_UP))
+        directions |= PLATFORM_DPAD_UP;
+    if (SDL_GetGamepadButton(s_gamepad, SDL_GAMEPAD_BUTTON_DPAD_RIGHT))
+        directions |= PLATFORM_DPAD_RIGHT;
+    if (SDL_GetGamepadButton(s_gamepad, SDL_GAMEPAD_BUTTON_DPAD_DOWN))
+        directions |= PLATFORM_DPAD_DOWN;
+    if (SDL_GetGamepadButton(s_gamepad, SDL_GAMEPAD_BUTTON_DPAD_LEFT))
+        directions |= PLATFORM_DPAD_LEFT;
+    return directions;
+}
+
 int Platform_ReadJoystick(int axes[5], unsigned char *buttons, int buttonCount)
 {
     int i, focused = Platform_IsActive(); /* as DirectInput's foreground mode: nothing without the focus */

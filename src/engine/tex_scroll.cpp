@@ -1,8 +1,8 @@
 /*
  * The texture scrolls: up to four id-lists named by the WAR type-0x83 header (g_texScrollListIds, reversal bits in
  * g_texScrollReverseMask) list DAV bitmap rects; each becomes a TexScroll entry plus a Texture holding a copy of the
- * rect's texels, and TexScroll_Update rotates the rect one row per call by copying from that copy. Game_Frame calls it
- * on every entry once per frame while GF_UPDATE_OBJECTS is set (tail jump into). Texture::Surface_LockForWrite is
+ * rect's texels, and TexScroll_Update rotates the rect one row per call by copying from that copy. Game_Frame calls
+ * TexScroll_UpdateAll while GF_UPDATE_OBJECTS is set; it advances rows at the reference game rate. Texture::Surface_LockForWrite is
  * declared returning long, as src/engine/texture.cpp defines it (same code).
  */
 #include "sdw_enums.h"
@@ -23,6 +23,8 @@ Texture *g_texScrollBackup[16] = {0}; /* per entry: a copy of the rect's texels 
 #include "game_state.h"
 #include "draw2d.h"
 #include "id_list.h"
+#include "time.h"
+static s32 g_texScrollRemainder = 0;
 /* type-0x83 header bytes 8..9: bit i reverses list i. */
 struct TexScrollReverseBits {
     u16 list0 : 1;
@@ -134,6 +136,7 @@ void TexScroll_Init(void)
     u16 list;
     total = 0;
     g_texScrollCount = 0;
+    g_texScrollRemainder = 0;
     for (list = 0; list < 4; list++)
         total += g_texScrollListIds[list];
     if (total != 0) {
@@ -153,10 +156,11 @@ void TexScroll_FreeAll(void)
     g_texScrollCount = 0;
 }
 
-/* scrolls every entry by one step (TexScroll_Update on each); reached once per frame from Game_Frame. */
+/* Scroll the original number of rows per unit of game time. */
 void TexScroll_UpdateAll(void)
 {
-    u16 i;
-    for (i = 0; i < g_texScrollCount; i++)
-        TexScroll_Update(i);
+    s32 steps = Time_ScaleStep(1, g_texScrollRemainder);
+    while (steps-- > 0)
+        for (u16 i = 0; i < g_texScrollCount; i++)
+            TexScroll_Update(i);
 }

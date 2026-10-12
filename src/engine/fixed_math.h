@@ -11,6 +11,7 @@ struct Vec4s;
 
 extern "C" u32 Color_RgbToBgr(u32 rgb);
 extern "C" u32 Color_RgbToBgrHalved(u32 c);
+extern "C" u32 Color_ExpandPs1(u32 c);
 extern "C" void Mat34s_ApplyScale(Mat34s *m, const Vec3s *scale);
 extern "C" void Mat34s_FromEulerXZY(const Vec3s *, Mat34s *);
 extern "C" void Mat34s_FromEulerYXZ(const Vec3s *angles, Mat34s *out);

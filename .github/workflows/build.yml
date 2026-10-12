@@ -1,37 +1,38 @@
-# Builds the game and the launcher for Linux, Windows and macOS (Release) on every push and pull request, and uploads
-# a zip per platform as a build artifact (as it is: downloaded from the run's page it is that zip, not a zip around it),
-# Rewooled-<Platform>-<version>.zip, the version the version job picks (see there; the game shows it too). Pushing a tag
-# v* (git tag v0.1.0 && git push origin v0.1.0), or merging a pull request labelled release:patch, release:minor or
-# release:major (the next version after the latest v* tag), also publishes the three zips as a GitHub Release.
+# Builds the game and the launcher for Linux, Windows and macOS (Release) on every pull request and when run by hand,
+# and uploads a zip per platform as a build artifact (as it is: downloaded from the run's page it is that zip, not a
+# zip around it), Rewooled-<Platform>-<version>.zip, the version the version job picks (see there; the game shows it
+# too).
+# Releases are only ever made by hand: Actions > Build > Run workflow on the default branch, with a tag (v1.2.3), builds
+# that commit and publishes the three zips as the GitHub Release of that tag. Run without a tag, it only builds.
 #
 # The zips hold SheepD3D and SheepLauncher only (on macOS the app bundle Rewooled.app, which holds both): the game's data comes from your own copy (BUILDING.md section 3).
 name: Build
 
 on:
-  push:
-    branches: ['**']
-    tags: ['v*']
   pull_request:
   workflow_dispatch:
+    inputs:
+      tag:
+        description: 'Release tag, e.g. v1.2.3 (a new one, the next after the latest release); empty: build only'
+        required: false
+        type: string
+        default: ''
 
 permissions:
   contents: read
 
 jobs:
   # the version every build is made as, decided before the builds (it is compiled into the game, SDW_VERSION):
-  #   a pushed tag v1.2.3                    -> version 1.2.3, shown v1.2.3, released as v1.2.3
-  #   a push to the default branch from a pull request labelled release:patch / minor / major
-  #                                          -> the next version after the latest v* tag, released
+  #   run by hand with the tag v1.2.3        -> version 1.2.3, shown v1.2.3, released as v1.2.3
   #   a pull request #14 (its last commit)   -> pr14-3fa9c1e
-  #   any other push                         -> the commit, f42df14
-  # Decided here, two labelled merges a minute apart can pick the same version: the second release then fails (its tag
-  # exists), it does not replace the first.
+  #   run by hand without a tag              -> the commit, f42df14
+  # A release tag must be new, look like v1.2.3, and the run must be on the default branch: anything else stops the run
+  # here, before building.
   version:
     name: Version
     runs-on: ubuntu-24.04
     permissions:
       contents: read
-      pull-requests: read
     outputs:
       version: ${{ steps.pick.outputs.version }}
       display: ${{ steps.pick.outputs.display }}
@@ -44,36 +45,29 @@ jobs:
           DEFAULT_REF: ${{ format('refs/heads/{0}', github.event.repository.default_branch) }}
           PR_NUMBER: ${{ github.event.pull_request.number }}
           PR_HEAD: ${{ github.event.pull_request.head.sha }}
+          TAG_INPUT: ${{ github.event_name == 'workflow_dispatch' && inputs.tag || '' }}
         run: |
-          tag=
-          if [[ "$GITHUB_REF" == refs/tags/v* ]]; then
-            tag="$GITHUB_REF_NAME"
-          elif [ "$GITHUB_EVENT_NAME" = push ] && [ "$GITHUB_REF" = "$DEFAULT_REF" ]; then
-            # the pull request this commit came from (merge, squash or rebase merge alike), and its release:* label
-            labels=$(gh api "repos/$GITHUB_REPOSITORY/commits/$GITHUB_SHA/pulls" \
-              --jq 'map(select(.merged_at != null)) | (.[0].labels // []) | .[].name' || true)
-            echo "labels: $labels"
-            case "$labels" in
-              *release:major*) bump=major ;;
-              *release:minor*) bump=minor ;;
-              *release:patch*) bump=patch ;;
-              *) bump= ;;
-            esac
-            if [ -n "$bump" ]; then
-              latest=$(gh api --paginate "repos/$GITHUB_REPOSITORY/git/matching-refs/tags/v" --jq '.[].ref' \
-                | sed 's|^refs/tags/||' | grep -E '^v[0-9]+\.[0-9]+\.[0-9]+$' | sort -V | tail -n1 || true)
-              IFS=. read -r major minor patch <<< "${latest:-v0.0.0}"
-              major=${major#v}
-              case "$bump" in
-                major) major=$((major + 1)); minor=0; patch=0 ;;
-                minor) minor=$((minor + 1)); patch=0 ;;
-                patch) patch=$((patch + 1)) ;;
-              esac
-              tag="v$major.$minor.$patch"
-              echo "latest: ${latest:-none}, bump: $bump"
-            fi
-          fi
+          tag=$(printf '%s' "$TAG_INPUT" | tr -d '[:space:]')
           if [ -n "$tag" ]; then
+            if ! [[ "$tag" =~ ^v[0-9]+\.[0-9]+\.[0-9]+$ ]]; then
+              echo "::error::the tag '$tag' is not of the form v1.2.3"
+              exit 1
+            fi
+            if [ "$GITHUB_REF" != "$DEFAULT_REF" ]; then
+              echo "::error::releases are made from the default branch, not $GITHUB_REF"
+              exit 1
+            fi
+            if gh api "repos/$GITHUB_REPOSITORY/git/ref/tags/$tag" --silent 2>/dev/null; then
+              echo "::error::the tag $tag exists already"
+              exit 1
+            fi
+            latest=$(gh api --paginate "repos/$GITHUB_REPOSITORY/git/matching-refs/tags/v" --jq '.[].ref' \
+              | sed 's|^refs/tags/||' | grep -E '^v[0-9]+\.[0-9]+\.[0-9]+$' | sort -V | tail -n1 || true)
+            if [ -n "$latest" ] && [ "$(printf '%s\n%s\n' "$latest" "$tag" | sort -V | tail -n1)" != "$tag" ]; then
+              echo "::error::the tag $tag is not after the latest release, $latest"
+              exit 1
+            fi
+            echo "latest release: ${latest:-none}"
             version="${tag#v}"
             display="$tag"
           elif [ -n "$PR_NUMBER" ]; then
@@ -231,11 +225,11 @@ jobs:
   release:
     name: Release
     needs: [version, build]
-    # a pushed v* tag, or a merge labelled release:*; the build must have passed
+    # a run by hand with a tag; the build must have passed
     if: >-
       !cancelled() && needs.build.result == 'success' && needs.version.outputs.tag != ''
     runs-on: ubuntu-24.04
-    # one release at a time, so two quick merges can't pick the same version
+    # one release at a time
     concurrency: release
     permissions:
       contents: write
@@ -270,8 +264,7 @@ jobs:
           for z in release/*.zip; do
             unzip -Z1 "$z" | grep -qv '\.zip$' || { echo "$z: not the platform zip"; exit 1; }
           done
-          # creates the tag on this commit if it doesn't exist yet (a labelled merge); a tag created with the workflow's
-          # own token doesn't start another run, so nothing is built twice
+          # creates the tag on the commit that was built
           gh release create "$TAG" release/*.zip \
             --repo "$GITHUB_REPOSITORY" \
             --target "$GITHUB_SHA" \

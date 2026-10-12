@@ -1,4 +1,5 @@
 #include "sdw_types.h"
+#include "screen.h"
 #include "sdw_enums.h"
 #include "scenaric_props.h"
 
@@ -367,6 +368,12 @@ void InvWheel_GetSlotPosColor(s32 *outXY, ColorBytes *outColor, s16 angle, s32 s
  * class coming into view. */
 void InvWheel_Draw(s16 angle, u8 crayonFrame, s32 slideY)
 {
+    s32 a[2], b[2];
+    ColorBytes centreColor;
+    InvWheel_GetSlotPosColor(a, &centreColor, 0, slideY);
+    InvWheel_GetSlotPosColor(b, &centreColor, 0x800, slideY);
+    HudElement hud(HudElement::Centre, HudElement::Start,
+                   (a[0] + b[0]) * 0.5f, (a[1] + b[1]) * 0.5f);
     s32 a4;
     u16 next;
     s32 pos[2];

@@ -29,6 +29,7 @@ char g_fmtAnimNotFound[] = "Cannot find AnimID %d, Model %s, Anim %s\n";
 #include "../engine/tex_table.h"
 #include "instance.h"
 #include "../engine/load_warmeshes.h"
+#include "scenaric_props.h"
 u16 Str_Length(const char *);
 u32 Anim_Start(Instance *instance, Animator *animation, u16 id, u32 mode);
 u32 Anim_GetDurationMs(Instance *instance, u16 id, u8 includeFirstTrack);
@@ -461,6 +462,18 @@ void Instance_DrawAnimParts(Instance *instance, Animator *animation, Camera *cam
         AttachLink *link_2;
         AttachLink **links_8;
         u8 childCount_2;
+        Mat44 samWaist, samLowerChest;
+        bool samGuardTwist = false;
+        mesh_9 = (Mesh *)Texture_FindByResource(instance->inst_model);
+        if (instance->inst_mode == INST_MODE_SCN_BODY && animation->nbJoints == 29 &&
+            instance->inst_model->nbJoints == 29 && mesh_9->vertexCount == 168 &&
+            static_cast<ScnObject *>(instance)->classId == CLASSID_SAM) {
+            const Sam *sam = static_cast<Sam *>(instance);
+            const ModelJoint *joints = instance->inst_model->joints;
+            samGuardTwist = (sam->state == SAM_STT_LOOKAFTER || sam->state == SAM_STT_LOOKAFTER_TIMED) &&
+                            joints[9].parent == 1 && joints[9].vertexCount == 8 &&
+                            joints[10].parent == 9 && joints[10].vertexCount == 14;
+        }
         pose_9 = (AnimJointPose *)animation->bufC;
         joint_13 = instance->inst_model->joints;
         matrix_6 = g_animPartMatrices;
@@ -482,6 +495,27 @@ void Instance_DrawAnimParts(Instance *instance, Animator *animation, Camera *cam
             *matrix_6 = *Mat44_Mul((Mat44 *)&result,
                                    Mat44_Mul((Mat44 *)&intermediate, matrix_6, &translation),
                                    &g_animPartMatrices[joint_13->parent]);
+            if (samGuardTwist && index_0 == 9) {
+                // ASAMSH01's waist row gets one third of the guarding yaw. Keep the full joint
+                // matrix above for its descendants and attachments; these are vertex-only variants.
+                float yaw = pose_9->rot[1];
+                if (yaw > 3.1415927f)
+                    yaw -= 6.2831855f;
+                if (yaw < -3.1415927f)
+                    yaw += 6.2831855f;
+                samWaist.SetRotYXZ(pose_9->rot[0], yaw / 3.0f, pose_9->rot[2]);
+                samWaist.MulInPlace(translation);
+                samWaist.MulInPlace(g_animPartMatrices[joint_13->parent]);
+                samLowerChest.SetRotYXZ(pose_9->rot[0], yaw * (2.0f / 3.0f), pose_9->rot[2]);
+                samLowerChest.MulInPlace(translation);
+                samLowerChest.MulInPlace(g_animPartMatrices[joint_13->parent]);
+            } else if (samGuardTwist && index_0 == 10) {
+                // Preserve the chest's animated local pose, with only the inherited waist yaw reduced.
+                Mat44 chestLocal;
+                chestLocal.SetRotYXZ(pose_9->rot[0], pose_9->rot[1], pose_9->rot[2]);
+                chestLocal.MulInPlace(translation);
+                Mat44_Mul(&samLowerChest, &chestLocal, &samLowerChest);
+            }
         }
         joint_13 = instance->inst_model->joints + 1;
         pose_9 = (AnimJointPose *)animation->bufC + 1;
@@ -497,6 +531,10 @@ void Instance_DrawAnimParts(Instance *instance, Animator *animation, Camera *cam
                     scaling.SetScale(pose_9->scale[0], pose_9->scale[1], pose_9->scale[2]);
                 g_animPartMatrices[index_0] =
                     *Mat44_Mul((Mat44 *)&result, &scaling, &g_animPartMatrices[index_0]);
+                if (samGuardTwist && index_0 == 9)
+                    Mat44_Mul(&samWaist, &scaling, &samWaist);
+                else if (samGuardTwist && index_0 == 10)
+                    Mat44_Mul(&samLowerChest, &scaling, &samLowerChest);
             }
         }
         if (instance->attachedChildCount) {
@@ -538,14 +576,26 @@ void Instance_DrawAnimParts(Instance *instance, Animator *animation, Camera *cam
             }
         }
         firstVertex_17 = 0;
-        mesh_9 = (Mesh *)Texture_FindByResource(instance->inst_model);
         joint_13 = instance->inst_model->joints + 1;
         pose_9 = (AnimJointPose *)animation->bufC + 1;
         for (index_0 = 1; index_0 < animation->nbJoints; index_0++, joint_13++, pose_9++) {
             vertexCount_0 = joint_13->vertexCount;
             g_animPartMatrices[index_0].MulInPlace(g_matUnk6d5428);
-            g_pD3DAppMain->SetTransform(D3DTRANSFORMSTATE_WORLD, &g_animPartMatrices[index_0]);
+            if (samGuardTwist && index_0 == 9) {
+                samWaist.MulInPlace(g_matUnk6d5428);
+                g_pD3DAppMain->SetTransform(D3DTRANSFORMSTATE_WORLD, &samWaist);
+            } else
+                g_pD3DAppMain->SetTransform(D3DTRANSFORMSTATE_WORLD, &g_animPartMatrices[index_0]);
             mesh_9->TransformRange(firstVertex_17, vertexCount_0);
+            if (samGuardTwist && index_0 == 10) {
+                // The lower chest ring is vertices 60, 61, 64 and 68 in the original mesh:
+                // offsets 2, 3, 6 and 10 within joint 10. Everything above keeps the full turn.
+                samLowerChest.MulInPlace(g_matUnk6d5428);
+                g_pD3DAppMain->SetTransform(D3DTRANSFORMSTATE_WORLD, &samLowerChest);
+                mesh_9->TransformRange(firstVertex_17 + 2, 2);
+                mesh_9->TransformRange(firstVertex_17 + 6, 1);
+                mesh_9->TransformRange(firstVertex_17 + 10, 1);
+            }
             firstVertex_17 += vertexCount_0;
         }
     }

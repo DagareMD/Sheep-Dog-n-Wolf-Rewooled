@@ -36,7 +36,7 @@ vertex VSOut VSMain(VSIn i [[stage_in]], constant VSParams &p [[buffer(0)]])
 
 struct PSParams {
     float4 fogColor;
-    float4 mode; // x: textured, y: alpha test, z: fog, w: specular
+    float4 mode; // x: 0 diffuse, 1 MODULATE, 2 MODULATE2X; y: alpha test, z: fog, w: specular (0 or 1)
 };
 
 fragment float4 PSMain(VSOut i [[stage_in]], constant PSParams &p [[buffer(0)]], texture2d<float> tex [[texture(0)]],
@@ -44,8 +44,9 @@ fragment float4 PSMain(VSOut i [[stage_in]], constant PSParams &p [[buffer(0)]],
 {
     float4 c = i.diffuse;
     if (p.mode.x > 0.5) {
+        // Saturate the texture stage before specular and fog; keep the texture's alpha.
         float4 t = tex.sample(smp, i.uv);
-        c = float4(t.rgb * i.diffuse.rgb, t.a);
+        c = float4(saturate(t.rgb * i.diffuse.rgb * p.mode.x), t.a);
     }
     if (p.mode.w > 0.5)
         c.rgb = saturate(c.rgb + i.specular.rgb);

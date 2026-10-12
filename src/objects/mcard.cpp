@@ -723,6 +723,7 @@ u8 MCard_SlotChooserConfirmSave()
 /* Card_DrawScreen: the four slot thumbnails */
 void Card_DrawScreen()
 {
+    HudElement hud(HudElement::Centre, HudElement::Centre, Text_ElementCentre);
     struct Work {
         float right, top, left, bottom;
         u16 unused, index, icon;
@@ -753,8 +754,8 @@ void Card_DrawScreen()
         w.bottom = Tex_CornerUV(w.texture[3], w.texture[3], w.texture[1]);
         Draw2D_TexRect(g_screen.Draw2D_LayerToZ(g_screenLayerBase + 2), g_screen.ScaleX(w.screen[0]),
                        g_screen.ScaleY(w.screen[1]), g_screen.ScaleX(w.screen[0] + w.screen[2]),
-                       g_screen.ScaleY(w.screen[1] + w.screen[3]), ICON(w.icon)->page, w.left, w.top, 0xffffff, w.left,
-                       w.bottom, 0xffffff, w.right, w.top, 0xffffff, w.right, w.bottom, 0xffffff);
+                       g_screen.ScaleY(w.screen[1] + w.screen[3]), ICON(w.icon)->page, w.left, w.top, 0x808080, w.left,
+                       w.bottom, 0x808080, w.right, w.top, 0x808080, w.right, w.bottom, 0x808080);
     }
     Hud_EndBox_stub();
 }

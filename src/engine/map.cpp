@@ -276,6 +276,7 @@ void Map::InitObject()
 
 void Map_Update()
 {
+    HudElement hud(HudElement::Stretch);
     g_map.UpdateState();
 }
 
@@ -285,7 +286,7 @@ void Map_DrawWipeBar(u16 y, s16 height)
     if (height > 0)
         Draw2D_FlatRect(g_screen.Draw2D_LayerToZ(g_screenLayerBase + 3), g_screen.Screen_ScaleX(0),
                         g_screen.Screen_ScaleY(y), g_screen.Screen_ScaleX(0x200),
-                        g_screen.Screen_ScaleY(y + (u16)height), Color_RgbToBgrHalved(0xa05050), 0);
+                        g_screen.Screen_ScaleY(y + (u16)height), Color_RgbToBgr(0xa05050), 0);
 }
 
 /* the translucent description panel: a 4x4 ARGB4444 texel block of 0xB05050 at alpha 4, stretched over rect,
@@ -303,7 +304,7 @@ void Map_DrawPanel(s16 *rect)
     desc = new DDSURFACEDESC2;
     tex->Surface_LockForWrite(desc);
     texels = (u8 *)desc->lpSurface;
-    argb = Color_RgbToBgrHalved(0xb05050) + 0x40000000;
+    argb = Color_RgbToBgr(0xb05050) + 0x40000000;
     for (y = 0; y < 4; y++)
         for (k = 0; k < 4; k++)
             ((u16 *)(y * desc->lPitch + (uptr)texels))[k] =
@@ -312,8 +313,8 @@ void Map_DrawPanel(s16 *rect)
     delete desc;
     Draw2D_TexRect(g_screen.Draw2D_LayerToZ(g_screenLayerBase + 3), g_screen.Screen_ScaleX(rect[0]),
                    g_screen.Screen_ScaleY(rect[1]), g_screen.Screen_ScaleX(rect[0] + rect[2]),
-                   g_screen.Screen_ScaleY(rect[1] + rect[3]), g_pPolyBin->texturePageCount - 4, 1.0f, 1.0f, 0x888, 1.0f,
-                   1.0f, 0x888, 1.0f, 1.0f, 0x888, 1.0f, 1.0f, 0x888);
+                   g_screen.Screen_ScaleY(rect[1] + rect[3]), g_pPolyBin->texturePageCount - 4, 1.0f, 1.0f, 0x808080, 1.0f,
+                   1.0f, 0x808080, 1.0f, 1.0f, 0x808080, 1.0f, 1.0f, 0x808080);
     Ui_DrawRectOutline(rect, 0xb0b0b0);
 }
 

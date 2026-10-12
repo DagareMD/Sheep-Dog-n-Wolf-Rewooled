@@ -2,8 +2,9 @@
  *
  * Every vertex the game draws is pre-transformed (XYZRHW): x, y in pixels with Direct3D's pixel centres on whole
  * numbers, z in 0..1, rhw = 1/w. The vertex shader turns that back into clip space (with w, so that the texture and
- * colours are interpolated with perspective, as Direct3D does). The pixel shader is texture stage 0 (MODULATE or the
- * diffuse colour), the specular add, per-vertex fog (the specular alpha is the fog factor) and the alpha test.
+ * colours are interpolated with perspective, as Direct3D does). The pixel shader is texture stage 0 (MODULATE,
+ * MODULATE2X or the diffuse colour), the specular add, per-vertex fog (the specular alpha is the fog factor) and the
+ * alpha test.
  *
  * Compiled by tools/sdl3_shaders.py into src/render/sdl3/sdl3_shaders.h (DXBC for Direct3D 12, SPIR-V for Vulkan);
  * game.metal is the same for Metal. The resource registers are SDL_CreateGPUShader's. */
@@ -56,16 +57,16 @@ VK_COMBINED VK_BINDING(0, 2) SamplerState smp : register(s0, space2);
 VK_BINDING(0, 3) cbuffer PSParams : register(b0, space3)
 {
     float4 fogColor; /* r, g, b */
-    float4 mode;     /* x: textured (MODULATE), y: alpha test, z: fog, w: specular (each 0 or 1) */
+    float4 mode;     /* x: 0 diffuse, 1 MODULATE, 2 MODULATE2X; y: alpha test, z: fog, w: specular (0 or 1) */
 };
 
 float4 PSMain(VSOut i) : SV_Target0
 {
     float4 c = i.diffuse;
     if (mode.x > 0.5) {
-        /* COLOROP MODULATE (texture x diffuse); ALPHAOP is left at its default, SELECTARG1 = the texture's alpha */
+        /* Saturate the texture stage before specular and fog. ALPHAOP SELECTARG1 keeps the texture's alpha. */
         float4 t = tex.Sample(smp, i.uv);
-        c = float4(t.rgb * i.diffuse.rgb, t.a);
+        c = float4(saturate(t.rgb * i.diffuse.rgb * mode.x), t.a);
     }
     if (mode.w > 0.5)
         c.rgb = saturate(c.rgb + i.specular.rgb);

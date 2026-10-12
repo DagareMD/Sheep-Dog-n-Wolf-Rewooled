@@ -1,5 +1,6 @@
 #define SDW_MEMBERS_Box s32 ContainsPointXZ(Vec3s *); /* before sdw_types.h, which defines Box */
 #include "sdw_types.h"
+#include "../engine/screen.h"
 #include "sdw_enums.h"
 #include "scenaric_props.h"
 #include "../engine/sound_mgr.h"
@@ -477,28 +478,31 @@ inline void DancingGhostManager::DrawClearTextInline()
     boxY = clearBoxY;
     letterText[0] = 0;
     letterText[1] = 0;
-    Text_SetWindow(g_screenLayerBase + 9, 1, 1, 500, 235, 1);
-    Text_SetFont(FONT_GAME);
-    oldFont = Font_SetCellSize((u8)cellW, (u8)clearLineHeight);
-    if (beatElapsedMs <= 2500) {
-        for (index = 0; index < stepClearedLen; index++) {
-            letterText[0] = stepClearedText[index + 4];
-            textY = (s32)(clearTextY * (beatElapsedMs + index * letterInterval)) / 500;
-            if (textY > clearTextY)
-                textY = clearTextY;
-            Text_SetCursor(clearBoxX + cellW * (index + 1), textY);
-            Text_WordWrap(letterText, TEXTALIGN_CONTINUE);
+    {
+        HudElement hud(HudElement::Centre, HudElement::Start, HudElement::CentreScreen);
+        Text_SetWindow(g_screenLayerBase + 9, 1, 1, 500, 235, 1);
+        Text_SetFont(FONT_GAME);
+        oldFont = Font_SetCellSize((u8)cellW, (u8)clearLineHeight);
+        if (beatElapsedMs <= 2500) {
+            for (index = 0; index < stepClearedLen; index++) {
+                letterText[0] = stepClearedText[index + 4];
+                textY = (s32)(clearTextY * (beatElapsedMs + index * letterInterval)) / 500;
+                if (textY > clearTextY)
+                    textY = clearTextY;
+                Text_SetCursor(clearBoxX + cellW * (index + 1), textY);
+                Text_WordWrap(letterText, TEXTALIGN_CONTINUE);
+            }
+        } else {
+            textY = clearTextY - clearTextY * (beatElapsedMs - 2500) / 500;
+            if (textY < -(s32)cellH)
+                textY = -clearLineHeight;
+            boxY = textY - (clearLineHeight >> 1);
+            Text_SetCursor(clearBoxX + cellW, textY);
+            Text_PrintFmt(stepClearedText);
         }
-    } else {
-        textY = clearTextY - clearTextY * (beatElapsedMs - 2500) / 500;
-        if (textY < -(s32)cellH)
-            textY = -clearLineHeight;
-        boxY = textY - (clearLineHeight >> 1);
-        Text_SetCursor(clearBoxX + cellW, textY);
-        Text_PrintFmt(stepClearedText);
+        g_spriteCrayon2.Draw(g_screenLayerBase + 10, clearBoxX, boxY, clearBoxX + clearBoxWidth, boxY + clearBoxHeight,
+                             g_uiTintColor, 0);
     }
-    g_spriteCrayon2.Draw(g_screenLayerBase + 10, clearBoxX, boxY, clearBoxX + clearBoxWidth, boxY + clearBoxHeight,
-                         g_uiTintColor, 0);
     Hud_EndBox_stub();
     Font_SetCellSize((u8)(oldFont & 255), (u8)(oldFont >> 16));
 }

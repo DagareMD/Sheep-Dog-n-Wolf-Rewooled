@@ -1,4 +1,5 @@
 #include "sdw_types.h"
+#include "../engine/screen.h"
 #include "sdw_enums.h"
 #define SDW_MEMBERS_Sprite void DrawAt(u32 *layer, s32 drawX, s32 yPos);
 #include "sdw_classes.h"
@@ -85,55 +86,58 @@ s32 DancingGhostManager::UpdateBeatTrack()
             return 0;
         }
     }
-    spriteTrack.Draw(g_screenLayerBase + 10, trackX, trackY, trackX + (trackWidth >> 1), trackY + trackHeight, 0x808080,
-                     0);
-    spriteTrack.Draw(g_screenLayerBase + 10, trackX + (trackWidth >> 1), trackY, trackX + trackWidth,
-                     trackY + trackHeight, 0x808080, 2);
-    for (noteIndex = 0; noteIndex < sequenceLengths[stepIndex]; noteIndex++) {
-        drawX = (cellW >> 1) * (beatIndex - noteIndex) + noteLeft;
-        if (!changed && beatElapsedMs >= 250)
-            drawX += (s16)((cellW >> 1) * (beatElapsedMs >> 1) / 500);
-        yPos = noteTop + (cellH >> 1);
-        if (drawX > trackX && drawX + (cellW >> 1) < noteRight) {
-            if (noteIndex % 4 == 0)
-                currentSprite = &spriteBarNote;
-            else
-                currentSprite = &spriteNote;
-            if (currentSprite)
-                currentSprite->Draw(g_screenLayerBase + 9, drawX, (s16)(yPos - (cellH >> 1)),
-                                    (s16)(drawX + (cellW >> 1)), (s16)(yPos + cellH + (cellH >> 1)), 0x808080, 0);
-            switch (sequenceButtons[stepIndex][noteIndex]) {
-                case (u16)~PAD_SQUARE:
-                    currentSprite = &spriteSquare;
-                    drawnStep = AFANTO02_ANIM_DANCE3;
-                    break;
-                case (u16)~PAD_TRIANGLE:
-                    currentSprite = &spriteTriangle;
-                    drawnStep = AFANTO02_ANIM_DANCE;
-                    break;
-                case (u16)~PAD_CIRCLE:
-                    currentSprite = &spriteCircle;
-                    drawnStep = AFANTO02_ANIM_DANCE2;
-                    break;
-                case (u16)~PAD_CROSS:
-                    currentSprite = &spriteCross;
-                    drawnStep = AFANTO02_ANIM_DANCE4;
-                    break;
-                case PAD_ALL_RELEASED:
-                    currentSprite = 0;
-                    drawnStep = AFANTO02_ANIM_DANCE5;
-                    break;
+    {
+        HudElement hud(HudElement::Centre, HudElement::Start, HudElement::CentreScreen);
+        spriteTrack.Draw(g_screenLayerBase + 10, trackX, trackY, trackX + (trackWidth >> 1), trackY + trackHeight, 0x808080,
+                         0);
+        spriteTrack.Draw(g_screenLayerBase + 10, trackX + (trackWidth >> 1), trackY, trackX + trackWidth,
+                         trackY + trackHeight, 0x808080, 2);
+        for (noteIndex = 0; noteIndex < sequenceLengths[stepIndex]; noteIndex++) {
+            drawX = (cellW >> 1) * (beatIndex - noteIndex) + noteLeft;
+            if (!changed && beatElapsedMs >= 250)
+                drawX += (s16)((cellW >> 1) * (beatElapsedMs >> 1) / 500);
+            yPos = noteTop + (cellH >> 1);
+            if (drawX > trackX && drawX + (cellW >> 1) < noteRight) {
+                if (noteIndex % 4 == 0)
+                    currentSprite = &spriteBarNote;
+                else
+                    currentSprite = &spriteNote;
+                if (currentSprite)
+                    currentSprite->Draw(g_screenLayerBase + 9, drawX, (s16)(yPos - (cellH >> 1)),
+                                        (s16)(drawX + (cellW >> 1)), (s16)(yPos + cellH + (cellH >> 1)), 0x808080, 0);
+                switch (sequenceButtons[stepIndex][noteIndex]) {
+                    case (u16)~PAD_SQUARE:
+                        currentSprite = &spriteSquare;
+                        drawnStep = AFANTO02_ANIM_DANCE3;
+                        break;
+                    case (u16)~PAD_TRIANGLE:
+                        currentSprite = &spriteTriangle;
+                        drawnStep = AFANTO02_ANIM_DANCE;
+                        break;
+                    case (u16)~PAD_CIRCLE:
+                        currentSprite = &spriteCircle;
+                        drawnStep = AFANTO02_ANIM_DANCE2;
+                        break;
+                    case (u16)~PAD_CROSS:
+                        currentSprite = &spriteCross;
+                        drawnStep = AFANTO02_ANIM_DANCE4;
+                        break;
+                    case PAD_ALL_RELEASED:
+                        currentSprite = 0;
+                        drawnStep = AFANTO02_ANIM_DANCE5;
+                        break;
+                }
+                if (currentSprite)
+                    currentSprite->DrawAt(g_screenLayerBase + 8, drawX, yPos);
+                if (noteIndex == beatSlot)
+                    currentStep = drawnStep;
             }
-            if (currentSprite)
-                currentSprite->DrawAt(g_screenLayerBase + 8, drawX, yPos);
-            if (noteIndex == beatSlot)
-                currentStep = drawnStep;
         }
+        spriteFrame.DrawFrame(g_screenLayerBase + 3, noteRight - cellW - (cellW >> 2), noteTop - (cellH >> 1),
+                              noteRight - (cellW >> 1) + (cellW >> 2), noteBottom + (cellH >> 1), 0xa0a0a, 1, 0);
+        spriteFrameDark.DrawFrame(g_screenLayerBase + 6, noteRight - cellW - (cellW >> 2), noteTop - (cellH >> 1),
+                                  noteRight - (cellW >> 1) + (cellW >> 2), noteBottom + (cellH >> 1), 0x505050, 1, 0);
     }
-    spriteFrame.DrawFrame(g_screenLayerBase + 3, noteRight - cellW - (cellW >> 2), noteTop - (cellH >> 1),
-                          noteRight - (cellW >> 1) + (cellW >> 2), noteBottom + (cellH >> 1), 0xa0a0a, 1, 0);
-    spriteFrameDark.DrawFrame(g_screenLayerBase + 6, noteRight - cellW - (cellW >> 2), noteTop - (cellH >> 1),
-                              noteRight - (cellW >> 1) + (cellW >> 2), noteBottom + (cellH >> 1), 0x505050, 1, 0);
     if (drawX > noteRight + (cellW >> 1))
         expected = 0;
     if (previousStep != currentStep) {

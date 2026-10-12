@@ -18,6 +18,8 @@ s32 ScrollText_Run(u8 mode, char *text, s32 allowInput); /* (src/engine/text.cpp
 u16 Str_ParseU16(const char *s);
 void Text_ApplyWindow(u32 *layer);
 void Text_CenterVertically(s32 lines);
+/* HudElement centre reader; reads the window when its first coordinate is mapped. */
+void Text_ElementCentre(const void *data, float &x, float &y);
 void Text_Disable();
 void Text_DrawNoWrap(const char *text, u8 align);
 void Text_DrawString(u8 c, s32 x, s32 y, float z, u32 rgb);

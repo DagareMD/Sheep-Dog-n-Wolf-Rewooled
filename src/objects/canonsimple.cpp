@@ -1,5 +1,6 @@
 
 #include "sdw_types.h"
+#include "../engine/screen.h"
 #include "sdw_enums.h"
 #include "scenaric_props.h"
 #define SDW_MEMBERS_ScnObject                           \
@@ -24,6 +25,7 @@ extern Wolf *g_pWolf;
 #include "../engine/scn_tools.h"
 #include "camera.h"
 #include "../engine/interface.h"
+#include "../engine/time.h"
 extern s32 g_dtMs;
 extern u32 *g_screenLayerBase;
 
@@ -186,6 +188,7 @@ void CanonSimple::SetState(u8 next)
             barrel->SetVisible(1);
             break;
         case CS_ST_AIM:
+            pitchRemainder = yawRemainder = 0;
             ball->HandleMessage(this, MSG_CB_SET_LETHAL, 0);
             g_pWolf->HandleMessage(this, MSG_FREEZE, 0);
             csFlags |= CSF_WOLF_FROZEN;
@@ -229,14 +232,17 @@ void CanonSimple::UpdateAim(Pad *pad)
                     x = 0;
                     horizontal = 0;
                     vertical = 0;
-                    Ui_DrawFlatRect(g_screenLayerBase, (ScreenWidthS32() >> 1) - 7, (ScreenHeightS32() >> 1) - 1,
-                                    (ScreenWidthS32() >> 1) - 3, (ScreenHeightS32() >> 1) + 1, 0xffffff);
-                    Ui_DrawFlatRect(g_screenLayerBase, (ScreenWidthS32() >> 1) + 3, (ScreenHeightS32() >> 1) - 1,
-                                    (ScreenWidthS32() >> 1) + 7, (ScreenHeightS32() >> 1) + 1, 0xffffff);
-                    Ui_DrawFlatRect(g_screenLayerBase, (ScreenWidthS32() >> 1) - 1, (ScreenHeightS32() >> 1) - 5,
-                                    (ScreenWidthS32() >> 1) + 1, (ScreenHeightS32() >> 1) - 2, 0xffffff);
-                    Ui_DrawFlatRect(g_screenLayerBase, (ScreenWidthS32() >> 1) - 1, (ScreenHeightS32() >> 1) + 2,
-                                    (ScreenWidthS32() >> 1) + 1, (ScreenHeightS32() >> 1) + 5, 0xffffff);
+                    {
+                        HudElement hud(HudElement::Centre, HudElement::Centre, HudElement::CentreScreen);
+                        Ui_DrawFlatRect(g_screenLayerBase, (ScreenWidthS32() >> 1) - 7, (ScreenHeightS32() >> 1) - 1,
+                                        (ScreenWidthS32() >> 1) - 3, (ScreenHeightS32() >> 1) + 1, 0xffffff);
+                        Ui_DrawFlatRect(g_screenLayerBase, (ScreenWidthS32() >> 1) + 3, (ScreenHeightS32() >> 1) - 1,
+                                        (ScreenWidthS32() >> 1) + 7, (ScreenHeightS32() >> 1) + 1, 0xffffff);
+                        Ui_DrawFlatRect(g_screenLayerBase, (ScreenWidthS32() >> 1) - 1, (ScreenHeightS32() >> 1) - 5,
+                                        (ScreenWidthS32() >> 1) + 1, (ScreenHeightS32() >> 1) - 2, 0xffffff);
+                        Ui_DrawFlatRect(g_screenLayerBase, (ScreenWidthS32() >> 1) - 1, (ScreenHeightS32() >> 1) + 2,
+                                        (ScreenWidthS32() >> 1) + 1, (ScreenHeightS32() >> 1) + 5, 0xffffff);
+                    }
                     dpadRepeatMs += g_dtMs;
                     stickRepeatMs += g_dtMs;
                     if (pad->cur.typeLen.type == PADTYPE_ANALOG) {
@@ -336,7 +342,7 @@ void CanonSimple::UpdateAim(Pad *pad)
 }
 void CanonSimple::AddAimOffset(s16 *offset, s16 step, u8 axis)
 {
-    *offset += step;
+    *offset += (s16)Time_ScaleStep(step, axis == CS_AIM_PITCH ? pitchRemainder : yawRemainder);
     switch (axis) {
         case CS_AIM_PITCH:
             if (*offset > 40)

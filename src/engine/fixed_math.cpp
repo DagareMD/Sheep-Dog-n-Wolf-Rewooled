@@ -172,6 +172,18 @@ s16 Math_RadiansToAngle4096(float radians)
     return angle;
 }
 
+/* ColorFix's expansion for untextured faces and the level clear/fog colour. Keep the literal 1.03f,
+ * truncation and saturation; the upper byte is unchanged. */
+u32 Color_ExpandPs1(u32 c)
+{
+    u32 out = c & 0xff000000;
+    for (int shift = 0; shift < 24; shift += 8) {
+        u32 ch = (u32)((c >> shift & 0xff) * 1.03f);
+        out |= (ch > 0xff ? 0xff : ch) << shift;
+    }
+    return out;
+}
+
 /* swaps the red and blue bytes; the top byte comes out 0. */
 u32 Color_RgbToBgr(u32 c)
 {

@@ -5,6 +5,7 @@
         return point->x >= min[0] && point->x <= max[0] && point->z >= min[2] && point->z <= max[2]; \
     }
 #include "sdw_types.h"
+#include "../engine/screen.h"
 #include "sdw_enums.h"
 #include "scenaric_props.h"
 #define SDW_MEMBERS_ScnObject       \
@@ -132,7 +133,10 @@ void Battery::Update()
                 hudSlots[index].UiQuad_SetFromBitmap((u16 *)*hudEmptyBitmap, index * 25,
                                                      hudOffsetY + ScreenHeightS16() - 30, 0, 0, 1024, 1024);
             hudSlots[index].SetColor(0x808080);
-            hudSlots[index].UiQuad_Draw(0xb);
+            {
+                HudElement hud(HudElement::Start, HudElement::End);
+                hudSlots[index].UiQuad_Draw(0xb);
+            }
         }
         if (g_pWolf->HandleMessage(this, MSG_WOLF_IS_DEAD, 0))
             hudState = BATTERY_ST_HUD_HIDE;
