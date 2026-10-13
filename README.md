@@ -1,20 +1,24 @@
 <p align="center">
-    <img src="https://github.com/SheepStealer2001/Sheep-Dog-n-Wolf-Rewooled/blob/main/res/icon.png?raw=true" style="width: 128px;" />
+    <img src="https://github.com/SDW-Community/Sheep-Dog-n-Wolf-Rewooled/blob/main/res/banner.png?raw=true" style="width: 512px;" />
 </p>
 
 <h1 align="center">Sheep, Dog 'n' Wolf: Rewooled</h1>
 
-<h3 align="center">An open-source multiplatform implementation of Sheep, Dog 'n' Wolf</h3>
+<h3 align="center">An open-source multiplatform implementation of Sheep, Dog 'n' Wolf PC </h3>
 
 
 <div align="center">
 
 
-[![github.com](https://img.shields.io/github/v/release/SheepStealer2001/Sheep-Dog-n-Wolf-Rewooled.svg?color=green)](https://github.com/SheepStealer2001/Sheep-Dog-n-Wolf-Rewooled/releases/latest)
+[![github.com](https://img.shields.io/github/v/release/SDW-Community/Sheep-Dog-n-Wolf-Rewooled.svg?color=green)](https://github.com/SheepStealer2001/Sheep-Dog-n-Wolf-Rewooled/releases/latest)
 
 </div>
 
 ---
+### How to use
+- **You need to provide your own files from the original game version, this project does not include any assets**
+- **Although it is supported, PSX files are still not fully tested and there are quirks to work out**
+- On the launcher you simply browse for your original game folder
 ### Features
 
 - **Multiplatform:**  All Windows only APIs replaced via SDL3
@@ -39,9 +43,7 @@ You need your own copy of the game: its data is read at run time and is not part
 
 **How it was made:** the decompilation was done with Claude and Codex coordinating via an MCP mailbox server - reading the machine code, naming, writing the source. In-game testing and technical knowledge about the game's inner workings came from the Sheep Raider community.
 
-### How to install
 
-To be written nicely
 
 ## Credits
 - **lu9** For making an icon for this project

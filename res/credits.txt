@@ -1,0 +1,7 @@
+Sheep, Dog 'n' Wolf: Rewooled
+
+- lu9: For their beautiful artwork for icons and the logo
+- uhwot: For their research into the game's asset formats (WAR, DAV, SND and others), with an exporter and ImHex patterns.
+- Number84 for the decompilation effort and code improvements
+- The entire Sheep Raider community for their help with playtesting
+

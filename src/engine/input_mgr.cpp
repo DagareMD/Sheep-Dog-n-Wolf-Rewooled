@@ -154,8 +154,9 @@ u8 InputMgr::PollDevice(u8 devIdx)
     return 0;
 }
 
-/* makes a device current and preferred, carries the old current device's allowHeld flag over, and points the
- * bindings at the keyboard or the pad table. */
+/* makes a device current and preferred and carries the old current device's allowHeld flag over. The bindings are
+ * always the keyboard's (and the mouse's): the controller's are fixed (ApplyFixedPadMapping), so the controls menu edits
+ * the keyboard's whichever device is current. */
 u8 InputMgr::SelectDevice(u8 devIdx)
 {
     InputDevice *dev = DeviceFromIndex(devIdx);
@@ -164,10 +165,7 @@ u8 InputMgr::SelectDevice(u8 devIdx)
         preferred = dev;
         current = dev;
         SetActiveFlags(held);
-        if (current == keyboard)
-            bindings = keyTable;
-        else
-            bindings = padTable;
+        bindings = keyTable;
         return 1;
     }
     return 0;
@@ -358,9 +356,50 @@ static u8 InputMgr_StickByte(float axis)
     return (u8)(v < 0 ? 0 : v > 0xff ? 0xff : v);
 }
 
+/* the PAD_ bit of each of the twelve button slots (INPUT_BIND_TRIANGLE .. INPUT_BIND_R3) */
+static const u16 s_slotPadBit[12] = {PAD_TRIANGLE, PAD_CIRCLE, PAD_CROSS,  PAD_SQUARE, PAD_L1, PAD_R1,
+                                     PAD_L2,       PAD_R2,     PAD_SELECT, PAD_START,  PAD_L3, PAD_R3};
+
+/* whether a controller answered this frame (CheckDevices): its buttons count, and it may be the current device */
+static u8 s_padConnected;
+
+/* whether a binding's button is held: its device exists and has that button */
+static u8 InputMgr_SlotHeld(const InputBinding *b)
+{
+    return b->dev && b->code < b->dev->buttonCount && b->dev->buttonPressed[b->code] == 1;
+}
+
+/* whether the keyboard (or a mouse button bound in its table) is in use this frame: a movement key or a bound button */
+static u8 InputMgr_KeyboardInUse(InputMgr *m)
+{
+    u8 slot;
+    if (m->keyboard->axisX != 0.0f || m->keyboard->axisY != 0.0f)
+        return 1;
+    for (slot = INPUT_BIND_TRIANGLE; slot <= INPUT_BIND_R3; slot++)
+        if (InputMgr_SlotHeld(&m->keyTable[slot]))
+            return 1;
+    return 0;
+}
+
+/* whether the controller is in use this frame: a stick out of its centre or a button */
+static u8 InputMgr_PadInUse(InputMgr *m)
+{
+    const float deadzone = 0.3f;
+    InputDevice *pad = m->joystick;
+    u16 i;
+    if (pad->axisX > deadzone || pad->axisX < -deadzone || pad->axisY > deadzone || pad->axisY < -deadzone ||
+        pad->axisRX > deadzone || pad->axisRX < -deadzone || pad->axisRY > deadzone || pad->axisRY < -deadzone)
+        return 1;
+    for (i = 0; i < pad->buttonCount; i++)
+        if (pad->buttonPressed[i] == 1)
+            return 1;
+    return 0;
+}
+
 long InputMgr::Poll()
 {
     u16 nav;
+    u8 slot;
     u8 escDown;
     if (CheckDevices() == 1) {
         escDown = keyboard->buttonPressed[DIK_ESCAPE];
@@ -389,31 +428,11 @@ long InputMgr::Poll()
             else if (current->axisY > 0.0f)
                 padBits &= (u16)~PAD_DOWN;
         }
-        if (bindings[0].dev->buttonCount) {
-            if (bindings[INPUT_BIND_TRIANGLE].dev->buttonPressed[bindings[INPUT_BIND_TRIANGLE].code] == 1)
-                padBits &= (u16)~PAD_TRIANGLE; /* Triangle */
-            if (bindings[INPUT_BIND_CIRCLE].dev->buttonPressed[bindings[INPUT_BIND_CIRCLE].code] == 1)
-                padBits &= (u16)~PAD_CIRCLE; /* Circle */
-            if (bindings[INPUT_BIND_CROSS].dev->buttonPressed[bindings[INPUT_BIND_CROSS].code] == 1)
-                padBits &= (u16)~PAD_CROSS; /* Cross */
-            if (bindings[INPUT_BIND_SQUARE].dev->buttonPressed[bindings[INPUT_BIND_SQUARE].code] == 1)
-                padBits &= (u16)~PAD_SQUARE; /* Square */
-            if (bindings[INPUT_BIND_L1].dev->buttonPressed[bindings[INPUT_BIND_L1].code] == 1)
-                padBits &= (u16)~PAD_L1; /* L1 */
-            if (bindings[INPUT_BIND_R1].dev->buttonPressed[bindings[INPUT_BIND_R1].code] == 1)
-                padBits &= (u16)~PAD_R1; /* R1 */
-            if (bindings[INPUT_BIND_L2].dev->buttonPressed[bindings[INPUT_BIND_L2].code] == 1)
-                padBits &= (u16)~PAD_L2; /* L2 */
-            if (bindings[INPUT_BIND_R2].dev->buttonPressed[bindings[INPUT_BIND_R2].code] == 1)
-                padBits &= (u16)~PAD_R2; /* R2 */
-            if (bindings[INPUT_BIND_SELECT].dev->buttonPressed[bindings[INPUT_BIND_SELECT].code] == 1)
-                padBits &= (u16)~PAD_SELECT; /* Select */
-            if (bindings[INPUT_BIND_START].dev->buttonPressed[bindings[INPUT_BIND_START].code] == 1)
-                padBits &= (u16)~PAD_START; /* Start */
-            if (bindings[INPUT_BIND_L3].dev->buttonPressed[bindings[INPUT_BIND_L3].code] == 1)
-                padBits &= (u16)~PAD_L3; /* L3 */
-            if (bindings[INPUT_BIND_R3].dev->buttonPressed[bindings[INPUT_BIND_R3].code] == 1)
-                padBits &= (u16)~PAD_R3; /* R3 */
+        /* the buttons of both: the keyboard's table (keys and mouse buttons) and, while one is connected, the
+         * controller's */
+        for (slot = INPUT_BIND_TRIANGLE; slot <= INPUT_BIND_R3; slot++) {
+            if (InputMgr_SlotHeld(&keyTable[slot]) || (s_padConnected && InputMgr_SlotHeld(&padTable[slot])))
+                padBits &= (u16)~s_slotPadBit[slot];
         }
         nav = PAD_ALL_RELEASED;
         escPressed = !escPrev && escDown ? 1 : 0;
@@ -871,29 +890,28 @@ void InputMgr::Input_GetKeyName(u32 diObjOffset, char *out, u32 outSize)
         *out = 0;
 }
 
-/* re-acquires when the current device is acquired, polls the keyboard (failure: 0), the joystick and the
- * mouse; a pad device that stopped answering hands over to the keyboard table, and the preferred device is taken back
- * when it answers again. */
+/* re-acquires when the current device is acquired and polls every device: the keyboard (failure: 0), the controller
+ * and the mouse. The keyboard and the controller both work at once (Poll merges their buttons); the current device,
+ * whose movement Poll reads (the keyboard's keys as the d-pad, the controller's stick as analog), is the one last used:
+ * the controller when only it is in use, the keyboard when only it is, and the keyboard while no controller answers. */
 u8 InputMgr::CheckDevices()
 {
+    u8 keyboardInUse, padInUse;
     if (current->acquired == 1)
         SetAcquiredAll(1);
     if (!PollDevice(INPUTDEV_MASK_KEYBOARD))
         return 0;
-    if ((presentMask & INPUTDEV_MASK_JOYSTICK) && !PollDevice(INPUTDEV_MASK_JOYSTICK)) {
-        if (current == joystick) {
-            current = keyboard;
-            bindings = keyTable;
-        }
-    } else if ((presentMask & INPUTDEV_MASK_MOUSE) && !PollDevice(INPUTDEV_MASK_MOUSE)) {
-        if (current == device3) {
-            current = keyboard;
-            bindings = keyTable;
-        }
-    } else if (preferred != current) {
-        current = preferred;
-        bindings = padTable;
-    }
+    s_padConnected = (presentMask & INPUTDEV_MASK_JOYSTICK) && PollDevice(INPUTDEV_MASK_JOYSTICK);
+    if (presentMask & INPUTDEV_MASK_MOUSE)
+        PollDevice(INPUTDEV_MASK_MOUSE);
+    keyboardInUse = InputMgr_KeyboardInUse(this);
+    padInUse = s_padConnected && InputMgr_PadInUse(this);
+    if (!s_padConnected || (keyboardInUse && !padInUse))
+        current = keyboard;
+    else if (padInUse && !keyboardInUse)
+        current = joystick;
+    preferred = current;
+    bindings = keyTable;
     return 1;
 }
 
