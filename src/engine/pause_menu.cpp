@@ -154,6 +154,8 @@ void PauseMenu_ItemSubTitles(u8 msg, MenuPage *item);
 void PauseMenu_ItemSoundDone(u8 msg, MenuPage *item);
 void PauseMenu_PageControllerSetting(u8 msg, MenuPage *item);
 void PauseMenu_PageDisplaySettings(u8 msg, MenuPage *item);
+static void PauseMenu_PageRewooledSettings(u8 msg, MenuPage *item);
+static void PauseMenu_ItemRewooledDone(u8 msg, MenuPage *item);
 void PauseMenu_PageEditConfig(u8 msg, MenuPage *item);
 void PauseMenu_ItemQuit(u8 msg, MenuPage *item);
 void PauseMenu_QuitConfirm(u8 msg, MenuPage *item);
@@ -684,6 +686,7 @@ void PauseMenu_Build()
     MenuPage *sounds;
     MenuPage *padPage;
     MenuPage *dispPage;
+    MenuPage *rewooledPage;
     MenuPage *bindPage;
 
     Menu_SetCurrent(&g_pauseMenu);
@@ -692,6 +695,7 @@ void PauseMenu_Build()
     sounds = Menu_AddPage(optMenu, (void *)PauseMenu_PageSoundOptions, 1);
     padPage = Menu_AddPage(optMenu, (void *)PauseMenu_PageControllerSetting, 1);
     dispPage = Menu_AddPage(optMenu, (void *)PauseMenu_PageDisplaySettings, 1);
+    rewooledPage = Menu_AddPage(optMenu, (void *)PauseMenu_PageRewooledSettings, 1);
     if (Progress_InLevel())
         g_pauseResumeIndex = Menu_AddItems(root, PauseMenu_ItemResume, PauseMenu_ItemRestartLevel, PauseMenu_ItemExit,
                                            PauseMenu_ItemQuit, MENU_END);
@@ -703,11 +707,12 @@ void PauseMenu_Build()
     Menu_AddItems(sounds, PauseMenu_ItemSpeakerMode, PauseMenu_ItemSoundsEnabled, PauseMenu_ItemSfxVolume,
                   PauseMenu_ItemVoiceVolume, PauseMenu_ItemMusicVolume, PauseMenu_ItemSubTitles,
                   PauseMenu_ItemSoundDone, MENU_END);
-    Menu_AddItems(dispPage, PauseMenu_ItemFog, PauseMenu_ItemMeshOutlines, PauseMenu_ItemDisplayDone, MENU_END);
+    Menu_AddItems(dispPage, PauseMenu_ItemFog, PauseMenu_ItemDisplayDone, MENU_END);
     Menu_AddItems(padPage, PauseMenu_ItemControlDevice, MENU_END);
     bindPage = Menu_AddPage(padPage, (void *)PauseMenu_PageEditConfig, 1);
-    Menu_AddItems(padPage, PauseMenu_ItemCameraSpeed, PauseMenu_ItemCameraAcceleration,
-                  PauseMenu_ItemInvertCameraJoystick, MENU_END);
+    Menu_AddItems(rewooledPage, PauseMenu_ItemCameraSpeed, PauseMenu_ItemCameraAcceleration,
+                  PauseMenu_ItemInvertCameraJoystick, PauseMenu_ItemMeshOutlines,
+                  PauseMenu_ItemRewooledDone, MENU_END);
     Menu_AddItems(bindPage, PauseMenu_ItemBindUp, PauseMenu_ItemBindRight, PauseMenu_ItemBindDown,
                   PauseMenu_ItemBindLeft, PauseMenu_ItemBindAction, PauseMenu_ItemBindJump,
                   PauseMenu_ItemBindWolfEyeView, PauseMenu_ItemBindRun, PauseMenu_ItemBindQuickInventory,
@@ -737,12 +742,24 @@ void PauseMenu_PageDisplaySettings(u8 msg, MenuPage *item)
         case MENU_MSG_DRAW_SELECTED:
             Menu_BuildValidateBackFooter();
             g_pProgress->viewDistanceSetting = g_pauseViewDistance;
-            g_meshOutlinesEnabled = g_pauseMeshOutlines;
             t = (float)(0xff - g_pProgress->viewDistanceSetting) / 255.0f;
             g_pViewFrustum->SetViewDistance((1.0f - t) * g_viewDistNear + g_viewDistFar * t, 1);
             break;
         case MENU_MSG_DRAW:
             Menu_Printf(item, TEXTALIGN_CENTER, g_textCatalog.LoadString(1, g_uiLangMask, 0x800));
+            break;
+    }
+}
+
+static void PauseMenu_PageRewooledSettings(u8 msg, MenuPage *item)
+{
+    switch (msg) {
+        case MENU_MSG_DRAW_SELECTED:
+            Menu_BuildValidateBackFooter();
+            g_meshOutlinesEnabled = g_pauseMeshOutlines;
+            break;
+        case MENU_MSG_DRAW:
+            Menu_Printf(item, TEXTALIGN_CENTER, "Rewooled Settings");
             break;
     }
 }
@@ -914,7 +931,7 @@ static void PauseMenu_ItemMeshOutlines(u8 msg, MenuPage *item)
     }
 }
 
-/* "Done" keeps the display settings and saves the outline preference. */
+/* "Done" keeps the display settings. */
 void PauseMenu_ItemDisplayDone(u8 msg, MenuPage *item)
 {
     switch (msg) {
@@ -927,6 +944,25 @@ void PauseMenu_ItemDisplayDone(u8 msg, MenuPage *item)
             break;
         case MENU_MSG_CONFIRM: {
             g_pauseViewDistance = g_pProgress->viewDistanceSetting;
+            Menu_GoBack();
+            g_pauseSlidersShown = 1;
+            break;
+        }
+    }
+}
+
+/* Camera settings save on change; "Done" accepts and saves the outline preview. */
+static void PauseMenu_ItemRewooledDone(u8 msg, MenuPage *item)
+{
+    switch (msg) {
+        case MENU_MSG_DRAW_SELECTED:
+            g_menuFooterStyle = MENU_FOOTER_VALIDATE_CANCEL;
+            Menu_BuildValidateCancelFooter();
+            break;
+        case MENU_MSG_DRAW:
+            Menu_Printf(item, TEXTALIGN_LEFT, Text_GetUiString(UISTR_DONE));
+            break;
+        case MENU_MSG_CONFIRM: {
             g_pauseMeshOutlines = g_meshOutlinesEnabled;
             SaveKey *key = Save_OpenKey("CfgGame");
             if (key) {
