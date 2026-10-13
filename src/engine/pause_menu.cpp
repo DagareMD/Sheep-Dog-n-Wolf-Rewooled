@@ -691,18 +691,20 @@ void PauseMenu_Build()
 
     Menu_SetCurrent(&g_pauseMenu);
     root = Menu_AddPage(0, (void *)"PAUSE", 0);
+    /* a menu lists its entries in the order they are added: Resume first, then Options and Rewooled Settings, then
+     * the rest */
+    g_pauseResumeIndex = Menu_AddItems(root, PauseMenu_ItemResume, MENU_END);
     optMenu = Menu_AddPage(root, (void *)PauseMenu_PageOptions, 1);
     sounds = Menu_AddPage(optMenu, (void *)PauseMenu_PageSoundOptions, 1);
     padPage = Menu_AddPage(optMenu, (void *)PauseMenu_PageControllerSetting, 1);
     dispPage = Menu_AddPage(optMenu, (void *)PauseMenu_PageDisplaySettings, 1);
-    rewooledPage = Menu_AddPage(optMenu, (void *)PauseMenu_PageRewooledSettings, 1);
+    rewooledPage = Menu_AddPage(root, (void *)PauseMenu_PageRewooledSettings, 1); /* on the pause menu, below Options */
     if (Progress_InLevel())
-        g_pauseResumeIndex = Menu_AddItems(root, PauseMenu_ItemResume, PauseMenu_ItemRestartLevel, PauseMenu_ItemExit,
-                                           PauseMenu_ItemQuit, MENU_END);
+        Menu_AddItems(root, PauseMenu_ItemRestartLevel, PauseMenu_ItemExit, PauseMenu_ItemQuit, MENU_END);
     else if (Progress_Level() == -1)
-        g_pauseResumeIndex = Menu_AddItems(root, PauseMenu_ItemResume, PauseMenu_ItemQuit, MENU_END);
+        Menu_AddItems(root, PauseMenu_ItemQuit, MENU_END);
     else
-        g_pauseResumeIndex = Menu_AddItems(root, PauseMenu_ItemResume, PauseMenu_ItemExit, PauseMenu_ItemQuit, MENU_END);
+        Menu_AddItems(root, PauseMenu_ItemExit, PauseMenu_ItemQuit, MENU_END);
     Menu_AddItems(optMenu, PauseMenu_ItemAutoSave, MENU_END);
     Menu_AddItems(sounds, PauseMenu_ItemSpeakerMode, PauseMenu_ItemSoundsEnabled, PauseMenu_ItemSfxVolume,
                   PauseMenu_ItemVoiceVolume, PauseMenu_ItemMusicVolume, PauseMenu_ItemSubTitles,
@@ -755,7 +757,7 @@ static void PauseMenu_PageRewooledSettings(u8 msg, MenuPage *item)
 {
     switch (msg) {
         case MENU_MSG_DRAW_SELECTED:
-            Menu_BuildValidateBackFooter();
+            Menu_BuildPauseFooter();
             g_meshOutlinesEnabled = g_pauseMeshOutlines;
             break;
         case MENU_MSG_DRAW:
