@@ -9,6 +9,7 @@
 
 RenderBackend *g_renderBackend = 0;
 RenderDevice *g_renderDevice = 0;
+u8 g_textureFilteringEnabled = 1;
 
 static const char *const s_kindNames[RENDERER_COUNT] = {"vulkan", "d3d12", "metal"};
 static const char *const s_kindDisplayNames[RENDERER_COUNT] = {"Vulkan (SDL3)", "Direct3D 12 (SDL3)", "Metal (SDL3)"};
