@@ -46,7 +46,6 @@ typedef void (*MenuHandler)(u8 msg, MenuPage *self);
 #include "approach.h"
 #include "mesh.h"
 #include "../platform/save_store.h"
-#include "../platform/options.h"
 extern u32 g_gameFlags;
 extern u32 *g_screenLayerBase; /* 2D draw layers: layer n is g_screenLayerBase + n */
 
@@ -79,7 +78,6 @@ u8 g_progressPauseCopy[0x2a] = {
     0}; /* the saved progress record, snapshotted on open; 0x2c bytes with the next two (see the header) */
 u8 g_pauseViewDistance = 0;          /* view distance to restore when the display page is left */
 static u8 g_pauseMeshOutlines = 1;   /* accepted outline setting; Done keeps the preview */
-static u8 g_pauseTextureFiltering = 1; /* accepted texture filtering setting; Done keeps the preview */
 s16 g_pauseResumeIndex = 0;          /* node index of "resume", where the cursor returns */
 u8 g_menuFooterStyle = 0;            /* which footer the menu draws */
 u8 g_menuFooterStylePrev = 0;        /* last frame's g_menuFooterStyle; nothing reads it */
@@ -164,9 +162,6 @@ void PauseMenu_QuitConfirm(u8 msg, MenuPage *item);
 void PauseMenu_ItemSoundsEnabled(u8 msg, MenuPage *item);
 void PauseMenu_ItemFog(u8 msg, MenuPage *item);
 static void PauseMenu_ItemMeshOutlines(u8 msg, MenuPage *item);
-static void PauseMenu_ItemTextureFiltering(u8 msg, MenuPage *item);
-static void PauseMenu_ItemScreenPercent(u8 msg, MenuPage *item);
-static void PauseMenu_ItemAntiAliasing(u8 msg, MenuPage *item);
 void PauseMenu_ItemDisplayDone(u8 msg, MenuPage *item);
 void PauseMenu_ItemControlDevice(u8 msg, MenuPage *item);
 void PauseMenu_ItemCameraSpeed(u8 msg, MenuPage *item);
@@ -234,8 +229,7 @@ inline ProgressOptionBits *Progress_Options()
     return &g_pProgress->optionBits;
 }
 
-/* a Yes/No setting stored as a one-byte REG_BINARY value in the "CfgGame" key; missing or invalid means Yes */
-static u8 PauseMenu_LoadBoolSetting(const char *name)
+static u8 PauseMenu_LoadOutlineSetting()
 {
     if (!Save_KeyExists("CfgGame"))
         return 1;
@@ -244,21 +238,11 @@ static u8 PauseMenu_LoadBoolSetting(const char *name)
         return 1;
     u8 enabled = 1;
     unsigned type = 0, size = sizeof(enabled);
-    if (Save_QueryValue(key, name, &type, &enabled, &size) != SAVE_OK ||
+    if (Save_QueryValue(key, "CelShadingOutlines", &type, &enabled, &size) != SAVE_OK ||
         type != 3 || size != sizeof(enabled) || enabled > 1)
         enabled = 1;
     Save_CloseKey(key);
     return enabled;
-}
-
-static u8 PauseMenu_LoadOutlineSetting()
-{
-    return PauseMenu_LoadBoolSetting("CelShadingOutlines");
-}
-
-static u8 PauseMenu_LoadTextureFilteringSetting()
-{
-    return PauseMenu_LoadBoolSetting("TextureFiltering");
 }
 
 /* per-level UI set-up, called once by Load_DAVnWAR: the pause box, the slider cursors' skins, the UI
@@ -269,7 +253,6 @@ void Menus_LoadLevelUi()
     u8 playerLang;
 
     g_meshOutlinesEnabled = g_pauseMeshOutlines = PauseMenu_LoadOutlineSetting();
-    g_textureFilteringEnabled = g_pauseTextureFiltering = PauseMenu_LoadTextureFilteringSetting();
     g_pauseFlag89 = 1;
     g_pauseSlidersShown = 0;
     PauseMenu_SetBox(0x1c0, 0xa0);
@@ -361,7 +344,6 @@ void PauseMenu_Exit()
 
     Menu_Close();
     g_meshOutlinesEnabled = g_pauseMeshOutlines;
-    g_textureFilteringEnabled = g_pauseTextureFiltering;
     // Keep the existing music stream unless the sound mode disables it or it needs starting.
     if (g_pProgress->optionBits.soundMode != SOUNDMODE_ALL)
         g_pStreamPlayer->Halt();
@@ -732,8 +714,7 @@ void PauseMenu_Build()
     bindPage = Menu_AddPage(padPage, (void *)PauseMenu_PageEditConfig, 1);
     Menu_AddItems(rewooledPage, PauseMenu_ItemCameraSpeed, PauseMenu_ItemCameraAcceleration,
                   PauseMenu_ItemInvertCameraJoystick, PauseMenu_ItemMeshOutlines,
-                  PauseMenu_ItemTextureFiltering, PauseMenu_ItemScreenPercent,
-                  PauseMenu_ItemAntiAliasing, PauseMenu_ItemRewooledDone, MENU_END);
+                  PauseMenu_ItemRewooledDone, MENU_END);
     Menu_AddItems(bindPage, PauseMenu_ItemBindUp, PauseMenu_ItemBindRight, PauseMenu_ItemBindDown,
                   PauseMenu_ItemBindLeft, PauseMenu_ItemBindAction, PauseMenu_ItemBindJump,
                   PauseMenu_ItemBindWolfEyeView, PauseMenu_ItemBindRun, PauseMenu_ItemBindQuickInventory,
@@ -778,7 +759,6 @@ static void PauseMenu_PageRewooledSettings(u8 msg, MenuPage *item)
         case MENU_MSG_DRAW_SELECTED:
             Menu_BuildPauseFooter();
             g_meshOutlinesEnabled = g_pauseMeshOutlines;
-            g_textureFilteringEnabled = g_pauseTextureFiltering;
             break;
         case MENU_MSG_DRAW:
             Menu_Printf(item, TEXTALIGN_CENTER, "Rewooled Settings");
@@ -953,98 +933,6 @@ static void PauseMenu_ItemMeshOutlines(u8 msg, MenuPage *item)
     }
 }
 
-/* Preview texture filtering (Yes = the game's bilinear filtering, No = sharp, pixelated textures). */
-static void PauseMenu_ItemTextureFiltering(u8 msg, MenuPage *item)
-{
-    switch (msg) {
-        case MENU_MSG_DRAW_SELECTED:
-            Menu_BuildNavFooter();
-            break;
-        case MENU_MSG_DRAW:
-            Menu_Printf(item, TEXTALIGN_LEFT, "Texture Filtering");
-            Menu_Printf(item, TEXTALIGN_RIGHT, g_onOffNames[g_textureFilteringEnabled]);
-            break;
-        case MENU_MSG_VALUE_CHANGED:
-            g_textureFilteringEnabled ^= 1;
-            Ui_PlayMoveSound();
-            break;
-    }
-}
-
-/* Screen percent: the share of the window's size the game renders at. The picture is scaled up to the window afterwards,
- * with nearest-neighbour below 100, so the pixels stay sharp. It applies as soon as it is changed, and is saved. */
-static const int g_screenPercentSteps[] = {25, 33, 50, 67, 75, 100, 125, 150, 200};
-
-static void PauseMenu_ItemScreenPercent(u8 msg, MenuPage *item)
-{
-    const int count = (int)(sizeof(g_screenPercentSteps) / sizeof(g_screenPercentSteps[0]));
-    int index = 0, best = 100000, i;
-    char text[8];
-
-    /* the step nearest the current value: the launcher takes any value from 25 to 200 */
-    for (i = 0; i < count; i++) {
-        int d = g_options.renderScale - g_screenPercentSteps[i];
-        if (d < 0)
-            d = -d;
-        if (d < best) {
-            best = d;
-            index = i;
-        }
-    }
-    switch (msg) {
-        case MENU_MSG_DRAW_SELECTED:
-            Menu_BuildNavFooter();
-            break;
-        case MENU_MSG_DRAW:
-            snprintf(text, sizeof(text), "%d", g_options.renderScale); /* no "%": the game font draws it as another symbol */
-            Menu_Printf(item, TEXTALIGN_LEFT, "Screen Percent");
-            Menu_Printf(item, TEXTALIGN_RIGHT, "%s", text);
-            break;
-        case MENU_MSG_LEFT:
-            g_options.renderScale = g_screenPercentSteps[(index + count - 1) % count];
-            break;
-        case MENU_MSG_RIGHT:
-            g_options.renderScale = g_screenPercentSteps[(index + 1) % count];
-            break;
-        case MENU_MSG_VALUE_CHANGED:
-            Options_SaveRenderSettings(g_options.renderScale, g_options.msaa);
-            Ui_PlayMoveSound();
-            break;
-    }
-}
-
-/* Anti-aliasing: multisampling. It applies as soon as it is changed, and is saved. A count the graphics card does not
- * support is replaced by the best one below it, and the row then shows the count that runs. */
-static void PauseMenu_ItemAntiAliasing(u8 msg, MenuPage *item)
-{
-    static const int values[] = {0, 2, 4, 8};
-    static const char *const names[] = {"Off", "MSAA 2x", "MSAA 4x", "MSAA 8x"};
-    int index = 0, i;
-
-    for (i = 0; i < 4; i++)
-        if (g_options.msaa >= values[i])
-            index = i;
-    switch (msg) {
-        case MENU_MSG_DRAW_SELECTED:
-            Menu_BuildNavFooter();
-            break;
-        case MENU_MSG_DRAW:
-            Menu_Printf(item, TEXTALIGN_LEFT, "Anti-Aliasing");
-            Menu_Printf(item, TEXTALIGN_RIGHT, "%s", names[index]);
-            break;
-        case MENU_MSG_LEFT:
-            g_options.msaa = values[(index + 3) % 4];
-            break;
-        case MENU_MSG_RIGHT:
-            g_options.msaa = values[(index + 1) % 4];
-            break;
-        case MENU_MSG_VALUE_CHANGED:
-            Options_SaveRenderSettings(g_options.renderScale, g_options.msaa);
-            Ui_PlayMoveSound();
-            break;
-    }
-}
-
 /* "Done" keeps the display settings. */
 void PauseMenu_ItemDisplayDone(u8 msg, MenuPage *item)
 {
@@ -1078,13 +966,10 @@ static void PauseMenu_ItemRewooledDone(u8 msg, MenuPage *item)
             break;
         case MENU_MSG_CONFIRM: {
             g_pauseMeshOutlines = g_meshOutlinesEnabled;
-            g_pauseTextureFiltering = g_textureFilteringEnabled;
             SaveKey *key = Save_OpenKey("CfgGame");
             if (key) {
                 Save_SetValue(key, "CelShadingOutlines", 3 /* REG_BINARY */,
                               &g_pauseMeshOutlines, sizeof(g_pauseMeshOutlines));
-                Save_SetValue(key, "TextureFiltering", 3 /* REG_BINARY */,
-                              &g_pauseTextureFiltering, sizeof(g_pauseTextureFiltering));
                 Save_CloseKey(key);
             }
             Menu_GoBack();
