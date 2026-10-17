@@ -12,14 +12,17 @@ bool Popup_Begin(const char *id, bool canClose) {
     ImGui::PushStyleVar(ImGuiStyleVar_WindowPadding, ImVec2(18, 16));
     bool open = ImGui::BeginPopupModal(id, 0, ImGuiWindowFlags_NoMove | ImGuiWindowFlags_NoResize);
     ImGui::PopStyleVar(2);
+    if (open) { /* its clicks are its own, where it lies over the banner that moves the window (launcher.cpp) */
+        const ImVec2 pos = ImGui::GetWindowPos(), size = ImGui::GetWindowSize();
+        Launcher_SetPopupRect(pos.x, pos.y, size.x, size.y);
+    }
     if (open && canClose && ImGui::IsKeyPressed(ImGuiKey_Escape, false))
         ImGui::CloseCurrentPopup();
     return open;
 }
 
 /* a setting's row: its label, then the next widget filling the rest of the line, all rows' widgets lined up */
-void Popup_Label(const char *label) {
-    const float labelWidth = 110;
+void Popup_Label(const char *label, float labelWidth) {
     ImGui::AlignTextToFramePadding();
     ImGui::TextUnformatted(label);
     ImGui::SameLine(labelWidth);

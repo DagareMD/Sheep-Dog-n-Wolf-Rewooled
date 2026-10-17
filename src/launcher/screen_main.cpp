@@ -8,10 +8,10 @@ void ScreenMain_Draw(LauncherState &s) {
     const ImGuiIO &io = ImGui::GetIO();
     const float bannerHeight = Launcher_DrawBanner(s);
 
-    /* below the banner, centred: the settings in a 2 x 2 grid, then Play and Quit */
+    /* below the banner, centred: the settings in a grid two wide (the last alone, centred), then Play and Quit */
     const ImVec2 gridButton(195, 40), mainButton(200, 42);
     const float gridGap = 30, rowGap = 30, gridToPlay = 44, playToQuit = 20;
-    const float blockHeight = 2 * gridButton.y + rowGap + gridToPlay + 2 * mainButton.y + playToQuit;
+    const float blockHeight = 3 * gridButton.y + 2 * rowGap + gridToPlay + 2 * mainButton.y + playToQuit;
     const float centre = io.DisplaySize.x * 0.5f;
     const float left = centre - gridGap * 0.5f - gridButton.x, right = centre + gridGap * 0.5f;
     float y = bannerHeight + (io.DisplaySize.y - bannerHeight - blockHeight) * 0.5f;
@@ -25,11 +25,15 @@ void ScreenMain_Draw(LauncherState &s) {
         PopupVideo_Open();
     y += gridButton.y + rowGap;
     ImGui::SetCursorPos(ImVec2(left, y));
-    if (ImGui::Button("Credits", gridButton))
-        PopupCredits_Open();
+    if (ImGui::Button("Language Export", gridButton))
+        PopupLangExport_Open(s);
     ImGui::SetCursorPos(ImVec2(right, y));
     if (ImGui::Button("Advanced", gridButton))
         PopupAdvanced_Open();
+    y += gridButton.y + rowGap;
+    ImGui::SetCursorPos(ImVec2(centre - gridButton.x * 0.5f, y));
+    if (ImGui::Button("Credits", gridButton))
+        PopupCredits_Open();
     y += gridButton.y + gridToPlay;
 
     /* Enter and Escape act on the main screen only: in a popup, Escape closes the popup (popup_common.cpp) */
@@ -78,4 +82,5 @@ void ScreenMain_Draw(LauncherState &s) {
     PopupVideo_Draw(s);
     PopupCredits_Draw();
     PopupAdvanced_Draw(s);
+    PopupLangExport_Draw(s);
 }

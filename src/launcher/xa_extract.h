@@ -22,8 +22,11 @@
 #include <cstdint>
 #include <filesystem>
 #include <functional>
+#include <memory>
 #include <mutex>
 #include <string>
+#include <utility>
+#include <vector>
 
 enum class ExtractionStatus {
     Idle,        // not started
@@ -84,3 +87,19 @@ private:
 // Blocks until finished, cancelled or failed; run it on a worker thread.
 // Returns true when status is Done.
 bool extractXaAudio(ExtractionSettings* settings);
+
+// A disc image's files, read in place (the Language Export page's source, langexport.h): by its UDF names when it has
+// them, else its ISO9660 (Joliet) ones; paths relative to the disc's top ("" the top itself), parts joined by '/'.
+class DiscFiles {
+public:
+    // the disc image at image (.iso of 2048-byte sectors, .bin of raw 2352-byte ones); null with the reason in error
+    static std::unique_ptr<DiscFiles> open(const std::filesystem::path& image, std::string& error);
+    virtual ~DiscFiles() = default;
+    // the entries of a folder: each one's name and whether it is a folder; false when there is no such folder
+    virtual bool list(const std::string& folder, std::vector<std::pair<std::string, bool>>& entries) = 0;
+    // the whole of a file; false when there is no such file or it cannot be read
+    virtual bool read(const std::string& file, std::string& data) = 0;
+};
+
+// The menu catalogue the install writes for the PSX release (References/GREET_txt.BSM's bytes): the PC release's.
+std::string greetCatalogue();

@@ -26,6 +26,7 @@
 #include "sound_mgr.h"
 #include "bs_io.h"
 #include "../platform/platform.h"
+#include "langpack.h"
 /* (g_streamWaves itself is defined below, with its initialiser.) */
 StreamPlayer *g_pStreamPlayer;
 char *g_streamLoadPath;           /* the path the loader thread is opening */
@@ -175,6 +176,27 @@ void StreamPlayer::StopAndFree()
 
 /* request a voice line: build .\Voices\<Language>/<clip name> and start the loader on it; the music fades out
  * meanwhile (state 5). The language argument is not used - the switch reads the progress object again. */
+const char *StreamPlayer_VoiceFolder(s32 language)
+{
+    switch (language) {
+        case GAME_LANG_FRENCH:
+            return "French/";
+        case GAME_LANG_SPANISH:
+            return "Spanish/";
+        case GAME_LANG_ITALIAN:
+            return "Italian/";
+        case GAME_LANG_GERMAN:
+            return "German/";
+        case GAME_LANG_DUTCH:
+            return "Dutch/";
+        case GAME_LANG_BRAZILIAN:
+            return "Brazilian/";
+        case GAME_LANG_ENGLISH:
+        default:
+            return "English/";
+    }
+}
+
 void StreamPlayer::PlayVoice(u32 clip, u8 language, u32 unused, u32 lipSync)
 {
     /* clip is 1-based into the voice bank; an object's record can hold anything there (the PlayStation's .WAR keeps
@@ -188,32 +210,9 @@ void StreamPlayer::PlayVoice(u32 clip, u8 language, u32 unused, u32 lipSync)
         return;
     if (g_pProgress->optionFlags & OPT_SOUNDMODE_MASK)
         return;
-    strcpy(path, g_voiceDir);
-    switch (g_pProgress->language) {
-        case GAME_LANG_FRENCH:
-            strcat(path, "French/");
-            break;
-        case GAME_LANG_SPANISH:
-            strcat(path, "Spanish/");
-            break;
-        case GAME_LANG_ITALIAN:
-            strcat(path, "Italian/");
-            break;
-        case GAME_LANG_GERMAN:
-            strcat(path, "German/");
-            break;
-        case GAME_LANG_DUTCH:
-            strcat(path, "Dutch/");
-            break;
-        case GAME_LANG_BRAZILIAN:
-            strcat(path, "Brazilian/");
-            break;
-        case GAME_LANG_ENGLISH:
-        default:
-            strcat(path, "English/");
-            break;
-    }
-    strcat(path, clipNames[currentClip - 1]);
+    /* Rewooled: the clip of the voice language (langpack.h), in place of Voices/<the config language>/
+     * (StreamPlayer_VoiceFolder) */
+    LangPack_VoicePath(clipNames[currentClip - 1], path, sizeof(path));
     g_pSoundSystem->UnregisterStreamEvent(current);
     g_streamLoadIsMusic = 0;
     g_streamLoadStatus = STREAM_LOAD_PENDING;

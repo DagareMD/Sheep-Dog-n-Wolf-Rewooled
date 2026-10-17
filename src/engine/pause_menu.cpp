@@ -29,6 +29,8 @@ typedef void (*MenuHandler)(u8 msg, MenuPage *self);
 
 /* ---- globals of other objects (named in the tables) ---- */
 #include "progress.h"
+#include "langpack.h"
+#include "../objects/rewooled_menu_strings.h"
 #include "game_state.h"
 #include "scenaric.h"
 #include "stream_player.h"
@@ -78,6 +80,9 @@ u8 g_progressPauseCopy[0x2a] = {
     0}; /* the saved progress record, snapshotted on open; 0x2c bytes with the next two (see the header) */
 u8 g_pauseViewDistance = 0;          /* view distance to restore when the display page is left */
 static u8 g_pauseMeshOutlines = 1;   /* accepted outline setting; Done keeps the preview */
+/* Rewooled Settings' languages while the page is open (langpack.h): saved by Done, dropped otherwise */
+static s32 g_pauseTextLanguage = 0;
+static s32 g_pauseVoiceLanguage = -1; /* -1: the text language's own voices */
 s16 g_pauseResumeIndex = 0;          /* node index of "resume", where the cursor returns */
 u8 g_menuFooterStyle = 0;            /* which footer the menu draws */
 u8 g_menuFooterStylePrev = 0;        /* last frame's g_menuFooterStyle; nothing reads it */
@@ -140,6 +145,7 @@ LONG Reg_CreateSubKey(HKEY *out, const char *name);
 void Reg_CloseKey(HKEY *key);
 u8 Reg_WriteBinary(HKEY key, const char *name, const void *data, DWORD size);
 
+static const char *PauseMenu_RewooledText(u16 index);
 void PauseMenu_ItemAutoSave(u8 msg, MenuPage *self);
 void PauseMenu_PageOptions(u8 msg, MenuPage *self);
 void PauseMenu_PageSoundOptions(u8 msg, MenuPage *self);
@@ -162,6 +168,8 @@ void PauseMenu_QuitConfirm(u8 msg, MenuPage *item);
 void PauseMenu_ItemSoundsEnabled(u8 msg, MenuPage *item);
 void PauseMenu_ItemFog(u8 msg, MenuPage *item);
 static void PauseMenu_ItemMeshOutlines(u8 msg, MenuPage *item);
+static void PauseMenu_ItemTextLanguage(u8 msg, MenuPage *item);
+static void PauseMenu_ItemVoiceLanguage(u8 msg, MenuPage *item);
 void PauseMenu_ItemDisplayDone(u8 msg, MenuPage *item);
 void PauseMenu_ItemControlDevice(u8 msg, MenuPage *item);
 void PauseMenu_ItemCameraSpeed(u8 msg, MenuPage *item);
@@ -713,8 +721,8 @@ void PauseMenu_Build()
     Menu_AddItems(padPage, PauseMenu_ItemControlDevice, MENU_END);
     bindPage = Menu_AddPage(padPage, (void *)PauseMenu_PageEditConfig, 1);
     Menu_AddItems(rewooledPage, PauseMenu_ItemCameraSpeed, PauseMenu_ItemCameraAcceleration,
-                  PauseMenu_ItemInvertCameraJoystick, PauseMenu_ItemMeshOutlines,
-                  PauseMenu_ItemRewooledDone, MENU_END);
+                  PauseMenu_ItemInvertCameraJoystick, PauseMenu_ItemMeshOutlines, PauseMenu_ItemTextLanguage,
+                  PauseMenu_ItemVoiceLanguage, PauseMenu_ItemRewooledDone, MENU_END);
     Menu_AddItems(bindPage, PauseMenu_ItemBindUp, PauseMenu_ItemBindRight, PauseMenu_ItemBindDown,
                   PauseMenu_ItemBindLeft, PauseMenu_ItemBindAction, PauseMenu_ItemBindJump,
                   PauseMenu_ItemBindWolfEyeView, PauseMenu_ItemBindRun, PauseMenu_ItemBindQuickInventory,
@@ -759,11 +767,26 @@ static void PauseMenu_PageRewooledSettings(u8 msg, MenuPage *item)
         case MENU_MSG_DRAW_SELECTED:
             Menu_BuildPauseFooter();
             g_meshOutlinesEnabled = g_pauseMeshOutlines;
+            g_pauseTextLanguage = LangPack_ChosenText();
+            g_pauseVoiceLanguage = LangPack_ChosenVoices();
             break;
         case MENU_MSG_DRAW:
-            Menu_Printf(item, TEXTALIGN_CENTER, "Rewooled Settings");
+            Menu_Printf(item, TEXTALIGN_CENTER, "%s", PauseMenu_RewooledText(RWMENU_REWOOLED_SETTINGS));
             break;
     }
+}
+
+/* Rewooled's own menu text, from the menu catalogue as the game's own is (rewooled_menu_strings.h: a language pack's
+ * Menus.txt, else the text Rewooled carries for the game's languages); kept until the next call for the same string */
+static const char *PauseMenu_RewooledText(u16 index)
+{
+    static char text[RWMENU_COUNT + 1][0x80]; /* 0x80: the message box's own buffer, g_msgBoxText */
+    if (index > RWMENU_COUNT)
+        return "";
+    char *s = g_textCatalog.LoadString(REWOOLED_MENU_GROUP, g_uiLangMask, index);
+    snprintf(text[index], sizeof(text[index]), "%s", s ? s : "");
+    delete[] s;
+    return text[index];
 }
 
 /* the "Edit config." page: entering it reloads the saved bindings. */
@@ -923,11 +946,79 @@ static void PauseMenu_ItemMeshOutlines(u8 msg, MenuPage *item)
             Menu_BuildNavFooter();
             break;
         case MENU_MSG_DRAW:
-            Menu_Printf(item, TEXTALIGN_LEFT, "Object Outlines");
+            Menu_Printf(item, TEXTALIGN_LEFT, "%s", PauseMenu_RewooledText(RWMENU_OBJECT_OUTLINES));
             Menu_Printf(item, TEXTALIGN_RIGHT, g_onOffNames[g_meshOutlinesEnabled]);
             break;
         case MENU_MSG_VALUE_CHANGED:
             g_meshOutlinesEnabled ^= 1;
+            Ui_PlayMoveSound();
+            break;
+    }
+}
+
+/* "Text Language": every language, built in or a pack (langpack.h); Done saves it, for the next level load */
+static void PauseMenu_ItemTextLanguage(u8 msg, MenuPage *item)
+{
+    s32 count = LangPack_Count();
+    switch (msg) {
+        case MENU_MSG_DRAW_SELECTED:
+            Menu_BuildNavFooter();
+            break;
+        case MENU_MSG_DRAW:
+            Menu_Printf(item, TEXTALIGN_LEFT, "%s", PauseMenu_RewooledText(RWMENU_TEXT_LANGUAGE));
+            Menu_Printf(item, TEXTALIGN_RIGHT, LangPack_Name(g_pauseTextLanguage));
+            break;
+        case MENU_MSG_LEFT:
+            if (count > 0)
+                g_pauseTextLanguage = (g_pauseTextLanguage + count - 1) % count;
+            break;
+        case MENU_MSG_RIGHT:
+            if (count > 0)
+                g_pauseTextLanguage = (g_pauseTextLanguage + 1) % count;
+            break;
+        case MENU_MSG_VALUE_CHANGED:
+            Ui_PlayMoveSound();
+            break;
+    }
+}
+
+/* the voice language after `from` in direction dir: -1 (the text language's own voices), then every language that
+ * has voices */
+static s32 PauseMenu_StepVoiceLanguage(s32 from, s32 dir)
+{
+    s32 count = LangPack_Count(), lang = from, i;
+    for (i = 0; i <= count; i++) {
+        lang += dir;
+        if (lang >= count)
+            lang = -1;
+        else if (lang < -1)
+            lang = count - 1;
+        if (lang < 0 || LangPack_HasVoices(lang))
+            return lang;
+    }
+    return -1;
+}
+
+/* "Voice Language": the voices of any language that has them, or the text language's own; Done saves it, at once */
+static void PauseMenu_ItemVoiceLanguage(u8 msg, MenuPage *item)
+{
+    switch (msg) {
+        case MENU_MSG_DRAW_SELECTED:
+            Menu_BuildNavFooter();
+            break;
+        case MENU_MSG_DRAW:
+            Menu_Printf(item, TEXTALIGN_LEFT, "%s", PauseMenu_RewooledText(RWMENU_VOICE_LANGUAGE));
+            Menu_Printf(item, TEXTALIGN_RIGHT,
+                        g_pauseVoiceLanguage < 0 ? PauseMenu_RewooledText(RWMENU_SAME_AS_TEXT)
+                                                 : LangPack_Name(g_pauseVoiceLanguage));
+            break;
+        case MENU_MSG_LEFT:
+            g_pauseVoiceLanguage = PauseMenu_StepVoiceLanguage(g_pauseVoiceLanguage, -1);
+            break;
+        case MENU_MSG_RIGHT:
+            g_pauseVoiceLanguage = PauseMenu_StepVoiceLanguage(g_pauseVoiceLanguage, 1);
+            break;
+        case MENU_MSG_VALUE_CHANGED:
             Ui_PlayMoveSound();
             break;
     }
@@ -965,7 +1056,12 @@ static void PauseMenu_ItemRewooledDone(u8 msg, MenuPage *item)
             Menu_Printf(item, TEXTALIGN_LEFT, Text_GetUiString(UISTR_DONE));
             break;
         case MENU_MSG_CONFIRM: {
+            s32 textChanged = g_pauseTextLanguage != LangPack_ChosenText();
             g_pauseMeshOutlines = g_meshOutlinesEnabled;
+            LangPack_ChooseText(g_pauseTextLanguage);
+            LangPack_ChooseVoices(g_pauseVoiceLanguage);
+            if (textChanged && g_pauseTextLanguage != LangPack_ActiveText())
+                Menu_ShowMessageBox(PauseMenu_RewooledText(RWMENU_TEXT_LANGUAGE_SAVED), TEXTALIGN_CENTER, 2500);
             SaveKey *key = Save_OpenKey("CfgGame");
             if (key) {
                 Save_SetValue(key, "CelShadingOutlines", 3 /* REG_BINARY */,
@@ -1048,12 +1144,13 @@ static void PauseMenu_CameraControlItem(u8 msg, MenuPage *item, u8 cursorIdx, u8
 
 void PauseMenu_ItemCameraSpeed(u8 msg, MenuPage *item)
 {
-    PauseMenu_CameraControlItem(msg, item, 4, &g_camSpeedSetting, "Camera Speed");
+    PauseMenu_CameraControlItem(msg, item, 4, &g_camSpeedSetting, PauseMenu_RewooledText(RWMENU_CAMERA_SPEED));
 }
 
 void PauseMenu_ItemCameraAcceleration(u8 msg, MenuPage *item)
 {
-    PauseMenu_CameraControlItem(msg, item, 5, &g_camAccelerationSetting, "Camera Acceleration");
+    PauseMenu_CameraControlItem(msg, item, 5, &g_camAccelerationSetting,
+                                PauseMenu_RewooledText(RWMENU_CAMERA_ACCELERATION));
 }
 
 void PauseMenu_ItemInvertCameraJoystick(u8 msg, MenuPage *item)
@@ -1063,7 +1160,7 @@ void PauseMenu_ItemInvertCameraJoystick(u8 msg, MenuPage *item)
             Menu_BuildNavFooter();
             break;
         case MENU_MSG_DRAW:
-            Menu_Printf(item, TEXTALIGN_LEFT, "Invert Camera Joystick");
+            Menu_Printf(item, TEXTALIGN_LEFT, "%s", PauseMenu_RewooledText(RWMENU_INVERT_CAMERA_JOYSTICK));
             Menu_Printf(item, TEXTALIGN_RIGHT, g_onOffNames[g_camInvertJoystick]);
             break;
         case MENU_MSG_VALUE_CHANGED:

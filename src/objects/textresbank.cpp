@@ -5,6 +5,8 @@
 #include "sdw_classes.h"
 #include "../engine/bs_io.h"
 #include "../sdk/crt.h"
+#include "../engine/langpack.h"
+#include "rewooled_menu_strings.h"
 TextResBank::TextResBank()
 {
     loaded = 0;
@@ -81,6 +83,11 @@ char *TextResBank::LoadString(u16 group, u16 langMask, u16 index)
     u16 d;
     u32 e;
     b = index;
+    if (const char *pack = LangPack_MenuString(group, index)) { /* Rewooled: the text language's pack */
+        c = new char[strlen(pack) + 1];
+        strcpy(c, pack);
+        return c;
+    }
     if (loaded == 1) {
         e = (group << 24) + (b << 8) + langMask;
         d = 0;
@@ -94,6 +101,21 @@ char *TextResBank::LoadString(u16 group, u16 langMask, u16 index)
         if (a == 1) {
             c = new char[entries[d].len];
             strncpy(c, entries[d].text, entries[d].len);
+            if (LangPack_FontActive() && entries[d].len && !c[entries[d].len - 1]) {
+                /* Rewooled: the game's own text in a language pack's font (langpack.h) */
+                const char *text = LangPack_GameText(c);
+                char *recoded = new char[strlen(text) + 1];
+                strcpy(recoded, text);
+                delete[] c;
+                c = recoded;
+            }
+        }
+    }
+    if (!c && group == REWOOLED_MENU_GROUP) { /* Rewooled's own menu text, which the game's file has not */
+        if (const char *own = RewooledMenu_String(langMask, index)) {
+            const char *text = LangPack_GameText(own);
+            c = new char[strlen(text) + 1];
+            strcpy(c, text);
         }
     }
     return c;

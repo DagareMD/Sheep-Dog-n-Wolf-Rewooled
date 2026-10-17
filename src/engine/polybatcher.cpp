@@ -108,6 +108,10 @@ int PolyBatcher_CompareSortZ(RenderPoly **a, RenderPoly **b);
 #define SDW_INLINE_D3DAPP_CLEARSTATEFLAGSINLINE_U32 1
 #include "../app/d3dapp_inlines.h"
 #include "psx_dav.h"
+#include "polybatcher.h"
+#include "langpack.h"
+extern "C" void *realloc(void *p, size_t size); /* CRT */
+static u32 s_imagePageCount; /* the image pages (below, before PolyBatcher::CreateTexture) */
 #undef SDW_INLINE_D3DAPP_CLEARSTATEFLAGSINLINE_U32
 /* the constructor without a texture file: pageCount pages, each an immediate page with its own batch
  * (0xc000 state flags). No caller; the loading constructor below is the one Load_DAVnWAR uses. */
@@ -164,6 +168,7 @@ PolyBatcher::PolyBatcher(D3DApp *app, u32 capacity, const char *davPath, s32 *ou
     flatBatchCount = 0;
     stateFlags = RSF_DITHER | RSF_COLORVERTEX;
     strcpy(g_davTexturePath, davPath);
+    s_imagePageCount = 0; /* a new level's: the last one's image pages are not added again */
     *outPageCount = LoadTexturePages(davPath);
     textureDirty = 1;
     sortedPolys = new RenderPoly[6000];
@@ -310,6 +315,112 @@ void PolyBatcher::SetComputeSortZ(u8 enable)
     computeSortZ = enable;
 }
 
+/* ---- Rewooled: image pages, the language packs' pictures and fonts (langpack.h), each a whole PNG in a page of its
+ * own after the level's pages and before the four blank pages LoadTexturePages puts last, put there again (at the same
+ * index) whenever the pages are loaded again. The blank pages stay last: the game finds them by counting back from the
+ * last page (interface.cpp: the screen fade's is the last, the letterbox's the one before; map.cpp's), and writes its
+ * colours into them. ---- */
+
+#define POLYBATCHER_IMAGE_PAGES 80
+static struct {
+    char path[SDW_PATH_MAX];
+    u32 square; /* the image in the top of a square page (a font: its texture coordinates are in 256ths) */
+} s_imagePages[POLYBATCHER_IMAGE_PAGES];
+
+/* a texture holding the PNG at path (in the top-left of a square one when square); a blank 4x4 when it cannot be read */
+static Texture *PolyBatcher_ImageTexture(D3DApp *renderer, const char *path, u32 square)
+{
+    s32 w = 0, h = 0, err = 0, row;
+    unsigned char *rgba = Platform_LoadImageRGBA(path, &w, &h);
+    DDSURFACEDESC2 desc;
+    u32 tw, th;
+    Texture *page;
+    if (!rgba) {
+        Platform_Log("image page %s cannot be read", path);
+        w = h = 0;
+    }
+    tw = w ? (u32)w : 4;
+    th = h ? (u32)h : 4;
+    if (square && th < tw)
+        th = tw;
+    page = new Texture(renderer, tw, th, TEXFMT_RGBA8, &err);
+    if (err) {
+        delete page;
+        if (rgba)
+            Platform_FreeImage(rgba);
+        return 0;
+    }
+    page->Surface_LockReadWrite(&desc);
+    for (row = 0; row < (s32)th; row++) {
+        u8 *to = (u8 *)desc.lpSurface + row * desc.lPitch;
+        u32 x;
+        for (x = 0; x < tw * 4; x += 4) {
+            const u8 *from = rgba && row < h ? rgba + (size_t)row * w * 4 + x : 0;
+            to[x] = from ? from[0] : 0;
+            to[x + 1] = from ? from[1] : 0;
+            to[x + 2] = from ? from[2] : 0;
+            to[x + 3] = (u8)(255 - (from ? from[3] : 0)); /* the game's alpha is transparency */
+        }
+    }
+    page->Surface_Unlock();
+    if (rgba)
+        Platform_FreeImage(rgba);
+    return page;
+}
+
+/* the four blank pages LoadTexturePages puts last */
+#define POLYBATCHER_BLANK_PAGES 4
+
+/* a page put in at index `at` (the pages from it on moved up one): the batcher's page and state tables grown */
+static void PolyBatcher_InsertPage(PolyBatcher *b, u32 at, Texture *page)
+{
+    u32 n = b->texturePageCount, *flags = new u32[n + 1], i;
+    b->textures = (Texture **)realloc(b->textures, (n + 1) * sizeof(Texture *));
+    for (i = n; i > at; i--)
+        b->textures[i] = b->textures[i - 1];
+    b->textures[at] = page;
+    memcpy(flags, b->texStateFlags, at * sizeof(u32));
+    memcpy(flags + at + 1, b->texStateFlags + at, (n - at) * sizeof(u32));
+    flags[at] = RSF_BLEND_ALPHA | RSF_TEXTURED | RSF_FILTER_LINEAR;
+    delete[] b->texStateFlags;
+    b->texStateFlags = flags;
+    b->texturePageCount = n + 1;
+}
+
+/* the first image page's index: after the level's pages, before the blank pages */
+static u32 PolyBatcher_FirstImagePage(PolyBatcher *b)
+{
+    return b->texturePageCount - POLYBATCHER_BLANK_PAGES - s_imagePageCount;
+}
+
+/* puts every image page before the blank pages (LoadTexturePages, at its end) */
+static void PolyBatcher_AppendImagePages(PolyBatcher *b)
+{
+    u32 i, at = b->texturePageCount - POLYBATCHER_BLANK_PAGES;
+    for (i = 0; i < s_imagePageCount; i++)
+        PolyBatcher_InsertPage(b, at + i,
+                               PolyBatcher_ImageTexture(b->renderer, s_imagePages[i].path, s_imagePages[i].square));
+}
+
+s32 PolyBatcher_AddImagePage(const char *path, u32 square)
+{
+    PolyBatcher *b = g_pPolyBin;
+    u32 i;
+    if (!b || !path || !*path || b->texturePageCount < POLYBATCHER_BLANK_PAGES + s_imagePageCount)
+        return -1;
+    for (i = 0; i < s_imagePageCount; i++)
+        if (!strcmp(s_imagePages[i].path, path) && s_imagePages[i].square == square)
+            return (s32)(PolyBatcher_FirstImagePage(b) + i);
+    if (s_imagePageCount == POLYBATCHER_IMAGE_PAGES)
+        return -1;
+    i = PolyBatcher_FirstImagePage(b) + s_imagePageCount;
+    PolyBatcher_InsertPage(b, i, PolyBatcher_ImageTexture(b->renderer, path, square));
+    snprintf(s_imagePages[s_imagePageCount].path, SDW_PATH_MAX, "%s", path);
+    s_imagePages[s_imagePageCount].square = square;
+    s_imagePageCount++;
+    return (s32)i;
+}
+
 /* replaces texture page `index` with a texture read from a bitmap file; 4 when the index is out of range,
  * else the constructor's result (on failure the new page is deleted but its pointer is left in the table). */
 s32 PolyBatcher::CreateTexture(const char *fileName, u32 index, u32 width, u32 height, u32 format)
@@ -331,48 +442,59 @@ s32 PolyBatcher::CreateTexture(const char *fileName, u32 index, u32 width, u32 h
  * usual alpha (opacity); folder is "retexture", or "retexture-psx" for a PlayStation .DAV (converted on load, its pages
  * are not the PC's). Used when it
  * is the page's shape at a whole multiple of its size (2x, 4x...): the page's UVs are fractions of it, so the models
- * draw the same images, sharper. 0 when there is none, or it does not fit (said in the log). */
-static Texture *PolyBatcher_LoadPageOverride(D3DApp *renderer, const char *davPath, const char *folder, u32 index,
-                                            u32 width, u32 height)
+ * draw the same images, sharper. Its path into out; false when the page file's path has no level folder. */
+static bool PolyBatcher_OverridePath(const char *davPath, const char *folder, u32 index, char *out, u32 size)
 {
-    char path[SDW_PATH_MAX];
     s32 seps[3] = {-1, -1, -1}; /* the last three separators: before the file, the level folder, "Levels" */
-    s32 i, found = 0, w = 0, h = 0, err, row;
-    unsigned char *rgba;
-    Texture *page;
-    DDSURFACEDESC2 desc;
+    s32 i, found = 0;
     for (i = (s32)strlen(davPath) - 1; i >= 0 && found < 3; i--)
         if (davPath[i] == '/' || davPath[i] == '\\')
             seps[found++] = i;
     if (found < 2)
-        return 0;
+        return false;
     if (seps[2] >= 0)
-        snprintf(path, sizeof(path), "%.*s/%s/%.*s/page_%02u.png", (int)seps[2], davPath, folder,
+        snprintf(out, size, "%.*s/%s/%.*s/page_%02u.png", (int)seps[2], davPath, folder,
                  (int)(seps[0] - seps[1] - 1), davPath + seps[1] + 1, (unsigned)index);
     else
-        snprintf(path, sizeof(path), "%s/%.*s/page_%02u.png", folder, (int)(seps[0] - seps[1] - 1),
-                 davPath + seps[1] + 1, (unsigned)index);
-    if (!(rgba = Platform_LoadImageRGBA(path, &w, &h)))
+        snprintf(out, size, "%s/%.*s/page_%02u.png", folder, (int)(seps[0] - seps[1] - 1), davPath + seps[1] + 1,
+                 (unsigned)index);
+    return true;
+}
+
+/* the PNG at path as RGBA with the usual alpha, when it is the shape of width x height at a whole multiple of its size
+ * (*scale); 0 when there is none, or it does not fit (said in the log). Free it with Platform_FreeImage. */
+static unsigned char *PolyBatcher_LoadFittingPng(const char *path, u32 width, u32 height, u32 *scale)
+{
+    s32 w = 0, h = 0;
+    unsigned char *rgba = Platform_LoadImageRGBA(path, &w, &h);
+    if (!rgba)
         return 0;
     if (!width || !height || w % (s32)width || h % (s32)height || w / (s32)width != h / (s32)height) {
-        Platform_Log("texture override %s: %dx%d is not a whole multiple of the page's %ux%u, not used", path, w, h,
-                     (unsigned)width, (unsigned)height);
+        Platform_Log("texture %s: %dx%d is not a whole multiple of %ux%u, not used", path, w, h, (unsigned)width,
+                     (unsigned)height);
         Platform_FreeImage(rgba);
         return 0;
     }
-    page = new Texture(renderer, (u32)w, (u32)h, TEXFMT_RGBA8, &err);
+    *scale = (u32)w / width;
+    return rgba;
+}
+
+/* a page of w x h texels from RGBA with the usual alpha: the game's alpha is transparency (its blending is INVSRCALPHA /
+ * SRCALPHA and its alpha test drops high alpha), so it is flipped. 0 when the texture cannot be made. */
+static Texture *PolyBatcher_RgbaPage(D3DApp *renderer, const unsigned char *rgba, u32 w, u32 h)
+{
+    s32 err, row;
+    DDSURFACEDESC2 desc;
+    Texture *page = new Texture(renderer, w, h, TEXFMT_RGBA8, &err);
     if (err) {
         delete page;
-        Platform_FreeImage(rgba);
         return 0;
     }
-    /* the PNG's alpha is the usual opacity; the game's is transparency (its blending is INVSRCALPHA / SRCALPHA and its
-     * alpha test drops high alpha), so it is flipped */
     page->Surface_LockReadWrite(&desc);
-    for (row = 0; row < h; row++) {
+    for (row = 0; row < (s32)h; row++) {
         u8 *to = (u8 *)desc.lpSurface + row * desc.lPitch;
         const u8 *from = rgba + (size_t)row * w * 4;
-        s32 x;
+        u32 x;
         for (x = 0; x < w * 4; x += 4) {
             to[x] = from[x];
             to[x + 1] = from[x + 1];
@@ -381,17 +503,317 @@ static Texture *PolyBatcher_LoadPageOverride(D3DApp *renderer, const char *davPa
         }
     }
     page->Surface_Unlock();
+    return page;
+}
+
+/* a page from the PNG at path, the page's shape at a whole multiple of its size (as the texture overrides above);
+ * 0 when there is none, or it does not fit (said in the log) */
+static Texture *PolyBatcher_LoadPagePng(D3DApp *renderer, const char *path, u32 width, u32 height)
+{
+    u32 scale = 1;
+    unsigned char *rgba = PolyBatcher_LoadFittingPng(path, width, height, &scale);
+    Texture *page;
+    if (!rgba)
+        return 0;
+    page = PolyBatcher_RgbaPage(renderer, rgba, width * scale, height * scale);
     Platform_FreeImage(rgba);
-    Platform_Log("texture override %s (%dx)", path, w / (s32)width);
+    if (page)
+        Platform_Log("texture override %s (%ux)", path, (unsigned)scale);
+    return page;
+}
+
+/* ---- Rewooled: a language pack's textures (langpack.h: LangPack_Textures), each pasted wherever the page file has
+ * the picture it replaces: the file's picture list (its rectangles) says which page and where, and a picture is known
+ * by its fingerprint ---- */
+
+typedef struct {
+    char path[SDW_PATH_MAX];
+    s16 x, w, y, h; /* the picture's rectangle, in texels of its page */
+    u16 page;
+    u32 tx, ty, tw, th; /* where the picture is in its texture, of tw x th (tw 0: it is the whole of it) */
+} PolyBatcherPicture;
+
+static PolyBatcherPicture *s_pictures;
+static u32 s_pictureCount;
+
+typedef struct {
+    u64 fingerprint;
+    char path[SDW_PATH_MAX];
+    u32 x, y, w, h; /* LangPack_Textures' */
+} PolyBatcherTexture;
+
+typedef struct {
+    PolyBatcherTexture *list;
+    u32 count, capacity;
+} PolyBatcherTextures;
+
+static void PolyBatcher_TextureFound(u64 fingerprint, const char *path, u32 x, u32 y, u32 w, u32 h, void *user)
+{
+    PolyBatcherTextures *t = (PolyBatcherTextures *)user;
+    if (t->count == t->capacity) {
+        t->capacity = t->capacity ? t->capacity * 2 : 64;
+        t->list = (PolyBatcherTexture *)realloc(t->list, t->capacity * sizeof(PolyBatcherTexture));
+    }
+    t->list[t->count].fingerprint = fingerprint;
+    snprintf(t->list[t->count].path, sizeof(t->list[t->count].path), "%s", path);
+    t->list[t->count].x = x;
+    t->list[t->count].y = y;
+    t->list[t->count].w = w;
+    t->list[t->count].h = h;
+    t->count++;
+}
+
+/* LangPack_Textures gives them by fingerprint, in order: the one of `fingerprint`, or 0 */
+static const PolyBatcherTexture *PolyBatcher_FindTexture(const PolyBatcherTextures &t, u64 fingerprint)
+{
+    u32 lo = 0, hi = t.count;
+    while (lo < hi) {
+        u32 mid = lo + (hi - lo) / 2;
+        if (t.list[mid].fingerprint < fingerprint)
+            lo = mid + 1;
+        else
+            hi = mid;
+    }
+    return lo < t.count && t.list[lo].fingerprint == fingerprint ? &t.list[lo] : 0;
+}
+
+/* a picture's fingerprint: FNV-1a (64-bit) over its page's pixel format (format & 3, one byte), its width and height
+ * (16-bit little-endian each) and its texels as the page file has them (16-bit little-endian), row by row. The same
+ * picture has the same fingerprint wherever a page file has it; a pack's textures are named by it (langpack.h). */
+static u64 PolyBatcher_Fingerprint(const u8 *texels, u32 pageWidth, u32 x, u32 y, u32 w, u32 h, u32 format)
+{
+    u64 f = 14695981039346656037ull;
+    const u8 head[5] = {(u8)(format & 3), (u8)w, (u8)(w >> 8), (u8)h, (u8)(h >> 8)};
+    u32 i, row;
+    for (i = 0; i < 5; i++)
+        f = (f ^ head[i]) * 1099511628211ull;
+    for (row = 0; row < h; row++) {
+        const u8 *from = texels + ((size_t)(y + row) * pageWidth + x) * 2;
+        for (i = 0; i < w * 2; i++)
+            f = (f ^ from[i]) * 1099511628211ull;
+    }
+    return f;
+}
+
+/* the pack textures of the page file being read: each of its pictures (rectCount records at rectAt, on pageCount pages
+ * at pagesAt) fingerprinted and those a pack has listed, the stream left where it was */
+static void PolyBatcher_FindPictures(BsStream &stream, u32 rectCount, u32 rectAt, u32 pageCount, u32 pagesAt)
+{
+    PolyBatcherTextures textures = {0, 0, 0};
+    u32 *pageAt, *pageW, *pageH, *pageFormat;
+    u32 back = stream.cursor, at, i;
+    free(s_pictures);
+    s_pictures = 0;
+    s_pictureCount = 0;
+    LangPack_Textures(PolyBatcher_TextureFound, &textures);
+    if (!textures.count || !rectCount || !pageCount) {
+        free(textures.list);
+        return;
+    }
+    /* where each page's texels are */
+    pageAt = (u32 *)malloc(pageCount * 4 * sizeof(u32));
+    pageW = pageAt + pageCount;
+    pageH = pageW + pageCount;
+    pageFormat = pageH + pageCount;
+    at = pagesAt;
+    for (i = 0; i < pageCount; i++) {
+        if (!stream.Seek(at) || at + 10 > stream.size)
+            break;
+        pageW[i] = abs(stream.ReadU16(1) - stream.ReadU16(1));
+        pageH[i] = abs(stream.ReadU16(1) - stream.ReadU16(1));
+        pageFormat[i] = stream.ReadU16(1);
+        pageAt[i] = at + 10;
+        at = pageAt[i] + pageW[i] * pageH[i] * 2;
+        if (at > stream.size)
+            break;
+    }
+    pageCount = i; /* the pages that are whole in the file */
+    s_pictures = (PolyBatcherPicture *)malloc(rectCount * sizeof(PolyBatcherPicture));
+    for (i = 0; i < rectCount && stream.Seek(rectAt + i * 10) && rectAt + i * 10 + 10 <= stream.size; i++) {
+        s16 x = (s16)stream.ReadU16(1), w = (s16)stream.ReadU16(1), y = (s16)stream.ReadU16(1),
+            h = (s16)stream.ReadU16(1);
+        u16 page = stream.ReadU16(1);
+        const PolyBatcherTexture *texture;
+        if (page >= pageCount || w <= 0 || h <= 0 || x < 0 || y < 0 || (u32)(x + w) > pageW[page] ||
+            (u32)(y + h) > pageH[page])
+            continue;
+        texture = PolyBatcher_FindTexture(textures, PolyBatcher_Fingerprint(stream.data + pageAt[page], pageW[page],
+                                                                              (u32)x, (u32)y, (u32)w, (u32)h,
+                                                                              pageFormat[page]));
+        if (!texture)
+            continue;
+        PolyBatcherPicture *p = &s_pictures[s_pictureCount++];
+        snprintf(p->path, sizeof(p->path), "%s", texture->path);
+        p->x = x;
+        p->w = w;
+        p->y = y;
+        p->h = h;
+        p->page = page;
+        p->tx = texture->x;
+        p->ty = texture->y;
+        p->tw = texture->w;
+        p->th = texture->h;
+    }
+    free(pageAt);
+    free(textures.list);
+    stream.Seek(back);
+}
+
+static u32 PolyBatcher_Gcd(u32 a, u32 b)
+{
+    while (b) {
+        u32 t = a % b;
+        a = b;
+        b = t;
+    }
+    return a;
+}
+
+/* page `index` (wid x h texels) as RGBA with the usual alpha, at its scale (*scale): its texture override, else the
+ * disc's texels (format), read from the stream; the disc's texels are skipped when replaced. 0 when it cannot be made.
+ * Free it with free(). */
+static unsigned char *PolyBatcher_PageRgba(BsStream &stream, const char *overridePath, u32 wid, u32 h, u32 format,
+                                           u32 *scale)
+{
+    unsigned char *png = 0, *rgba;
+    u32 n;
+    if (overridePath)
+        png = PolyBatcher_LoadFittingPng(overridePath, wid, h, scale);
+    if (png) {
+        size_t bytes = (size_t)wid * *scale * h * *scale * 4;
+        stream.Skip((int)(wid * h * 2));
+        rgba = (unsigned char *)malloc(bytes);
+        memcpy(rgba, png, bytes);
+        Platform_FreeImage(png);
+        return rgba;
+    }
+    *scale = 1;
+    rgba = (unsigned char *)malloc((size_t)wid * h * 4);
+    for (n = 0; n < wid * h; n++) {
+        u32 c = stream.ReadU16(1), r, g, b, clear;
+        switch (format & TEXFMT_PIXEL_MASK) {
+            case TEXFMT_ARGB1555:
+                r = (c >> 10 & 31) * 255 / 31, g = (c >> 5 & 31) * 255 / 31, b = (c & 31) * 255 / 31;
+                clear = 255 * (c >> 15);
+                break;
+            case TEXFMT_ARGB4444:
+                r = (c >> 8 & 15) * 17, g = (c >> 4 & 15) * 17, b = (c & 15) * 17, clear = (c >> 12 & 15) * 17;
+                break;
+            default:
+                r = (c >> 11 & 31) * 255 / 31, g = (c >> 5 & 63) * 255 / 63, b = (c & 31) * 255 / 31, clear = 0;
+        }
+        rgba[n * 4] = (u8)r;
+        rgba[n * 4 + 1] = (u8)g;
+        rgba[n * 4 + 2] = (u8)b;
+        rgba[n * 4 + 3] = (u8)(255 - clear);
+    }
+    return rgba;
+}
+
+/* a pack picture's texels as RGBA with the usual alpha, at its texture's scale (*scale): its texture (a whole multiple of
+ * its size), or its part of it. 0 when there is none, or it does not fit (said in the log). Free it with free(). */
+static unsigned char *PolyBatcher_LoadPicture(const PolyBatcherPicture &p, u32 *scale)
+{
+    u32 w = p.tw ? p.tw : (u32)p.w, h = p.tw ? p.th : (u32)p.h, s = 1, row;
+    unsigned char *png = PolyBatcher_LoadFittingPng(p.path, w, h, &s), *out;
+    if (!png)
+        return 0;
+    if (p.tx + (u32)p.w > w || p.ty + (u32)p.h > h) {
+        Platform_Log("texture %s: a %dx%d picture at %u,%u is not inside its %ux%u, not used", p.path, (int)p.w,
+                     (int)p.h, (unsigned)p.tx, (unsigned)p.ty, (unsigned)w, (unsigned)h);
+        Platform_FreeImage(png);
+        return 0;
+    }
+    out = (unsigned char *)malloc((size_t)p.w * s * p.h * s * 4);
+    for (row = 0; row < (u32)p.h * s; row++)
+        memcpy(out + (size_t)row * p.w * s * 4, png + (((size_t)p.ty * s + row) * w * s + p.tx * s) * 4,
+               (size_t)p.w * s * 4);
+    Platform_FreeImage(png);
+    *scale = s;
+    return out;
+}
+
+/* page `index` with the pack textures that are on it pasted in: made at the smallest scale that is a whole multiple
+ * of the page's own (its override's) and of every texture's (each texture's PNG is its picture's rectangle, or its joined
+ * texture's size, at a whole multiple of it), up to 8x; a texture that does not fit is left out (said in the log). 0
+ * when the page cannot be made. */
+static Texture *PolyBatcher_PageWithPictures(D3DApp *renderer, BsStream &stream, const char *overridePath, u32 index,
+                                             u32 wid, u32 h, u32 format)
+{
+    unsigned char *base, *out, **pics;
+    u32 *picScale, *used, count = 0, baseScale = 1, scale, i, row, col;
+    Texture *page;
+    base = PolyBatcher_PageRgba(stream, overridePath, wid, h, format, &baseScale);
+    if (!base)
+        return 0;
+    pics = (unsigned char **)malloc(s_pictureCount * sizeof(unsigned char *));
+    picScale = (u32 *)malloc(s_pictureCount * sizeof(u32));
+    used = (u32 *)malloc(s_pictureCount * sizeof(u32));
+    scale = baseScale;
+    for (i = 0; i < s_pictureCount; i++) {
+        const PolyBatcherPicture &p = s_pictures[i];
+        u32 s = 1, lcm;
+        if (p.page != index)
+            continue;
+        if (p.w <= 0 || p.h <= 0 || p.x < 0 || p.y < 0 || (u32)(p.x + p.w) > wid || (u32)(p.y + p.h) > h)
+            continue;
+        if (!(pics[count] = PolyBatcher_LoadPicture(p, &s)))
+            continue;
+        lcm = scale / PolyBatcher_Gcd(scale, s) * s;
+        if (lcm > 8) {
+            Platform_Log("texture %s: %ux with the page's %ux would need a page over 8x its size, not used", p.path,
+                         (unsigned)s, (unsigned)scale);
+            free(pics[count]);
+            continue;
+        }
+        scale = lcm;
+        picScale[count] = s;
+        used[count] = i;
+        count++;
+    }
+    out = (unsigned char *)malloc((size_t)wid * scale * h * scale * 4);
+    for (row = 0; row < h * scale; row++)
+        for (col = 0; col < wid * scale; col++) {
+            u32 k = baseScale * row / scale * wid * baseScale + baseScale * col / scale;
+            memcpy(out + ((size_t)row * wid * scale + col) * 4, base + (size_t)k * 4, 4);
+        }
+    free(base);
+    for (i = 0; i < count; i++) {
+        const PolyBatcherPicture &p = s_pictures[used[i]];
+        u32 s = picScale[i], pw = (u32)p.w * s;
+        for (row = 0; row < (u32)p.h * scale; row++)
+            for (col = 0; col < (u32)p.w * scale; col++) {
+                const unsigned char *from = pics[i] + ((size_t)(row * s / scale) * pw + col * s / scale) * 4;
+                memcpy(out + ((size_t)(p.y * scale + row) * wid * scale + p.x * scale + col) * 4, from, 4);
+            }
+        Platform_Log("texture %s: picture on page %u (%ux)", p.path, (unsigned)index, (unsigned)s);
+        free(pics[i]);
+    }
+    free(pics);
+    free(picScale);
+    free(used);
+    page = PolyBatcher_RgbaPage(renderer, out, wid * scale, h * scale);
+    free(out);
     return page;
 }
 
 /* page `index` of the page file at stream (its header read: wid x h texels of `format`): its override, or the disc's
- * 16-bit texels. 0 when the texture cannot be made. */
+ * 16-bit texels; with the language pack's textures that are on it pasted in (Rewooled). 0 when the texture cannot be
+ * made. */
 static Texture *PolyBatcher_ReadPage(D3DApp *renderer, BsStream &stream, const char *davPath, u32 index, u32 wid, u32 h,
                                      u32 format, const char *overrideFolder)
 {
-    Texture *page = PolyBatcher_LoadPageOverride(renderer, davPath, overrideFolder, index, wid, h);
+    char overridePath[SDW_PATH_MAX];
+    bool haveOverride;
+    Texture *page = 0;
+    u32 i;
+    haveOverride = PolyBatcher_OverridePath(davPath, overrideFolder, index, overridePath, sizeof(overridePath));
+    for (i = 0; i < s_pictureCount; i++)
+        if (s_pictures[i].page == index)
+            return PolyBatcher_PageWithPictures(renderer, stream, haveOverride ? overridePath : 0, index, wid, h,
+                                                format);
+    if (haveOverride)
+        page = PolyBatcher_LoadPagePng(renderer, overridePath, wid, h);
     DDSURFACEDESC2 desc;
     u16 *pix;
     u32 n;
@@ -450,13 +872,16 @@ s32 PolyBatcher::LoadTexturePages(const char *path)
             stream.ReadU32(1);
             stream.Seek(stream.ReadU32(1));
             stream.ReadU16(1);
-            stream.ReadU16(1);
+            u32 rectCount = stream.ReadU16(1);
             texturePageCount = stream.ReadU16(1);
             textures = (Texture **)malloc((texturePageCount + 4) * sizeof(Texture *));
             texStateFlags = new u32[texturePageCount + 4];
             stream.ReadU32(1);
-            stream.ReadU32(1);
-            stream.Seek(stream.ReadU32(1));
+            u32 rectAt = stream.ReadU32(1);
+            u32 pagesAt = stream.ReadU32(1);
+            /* Rewooled: the language pack's textures, found among the file's pictures */
+            PolyBatcher_FindPictures(stream, rectCount, rectAt, texturePageCount, pagesAt);
+            stream.Seek(pagesAt);
             iPage = 0;
             /* the immediate pages (format bits 0x1c == 4) come first */
             do {
@@ -532,6 +957,7 @@ s32 PolyBatcher::LoadTexturePages(const char *path)
                 iPage++;
                 texturePageCount++;
             }
+            PolyBatcher_AppendImagePages(this); /* Rewooled: the language packs' pictures and fonts, before them */
         }
     }
     Platform_Log("LoadTexturePages: %s (%u pages)", path, (unsigned)texturePageCount);

@@ -29,6 +29,7 @@
 u16 Str_Length(const char *s);
 #include "file.h"
 #include "progress.h"
+#include "langpack.h"
 void Debug_Printf(const char *fmt, ...); /* an empty stub in the retail build */
 
 void Mlt_MapLanguageToBlock(u16 *lang);
@@ -98,8 +99,15 @@ void StringBank_FreeLists(char **lists, u16 count)
 }
 
 /* loads the .MLT at path into bank for the current config language. 0, or -1 on a missing file or a failed
- * (CRC-checked) read. A file with no payload leaves the bank empty. */
+ * (CRC-checked) read. A file with no payload leaves the bank empty. Rewooled: the bank comes from the language packs
+ * (langpack.h), which read this file's block of the text language's base and lay the packs' lines over it; the
+ * original reader below is kept as it was. */
 s32 Load_MLT(char *path, StringBank *bank)
+{
+    return LangPack_LoadLevelText(path, bank);
+}
+
+s32 Load_MLT_Original(char *path, StringBank *bank)
 {
     FileHandle file;
     u32 maxSize;
