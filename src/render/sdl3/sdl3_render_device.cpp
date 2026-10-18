@@ -43,27 +43,47 @@ static u32 Sdl3_ScaledSize(u32 size)
 
 /* Anti-aliasing (--msaa): the largest sample count up to wanted that the GPU supports for both the colour and the
  * depth format the renderer uses; 1 (off) when wanted is 0 or 1 or none is supported */
-static SDL_GPUSampleCount Sdl3_PickSampleCount(SDL_GPUDevice *gpu, int wanted)
+/* The sample counts the GPU can use for both the colour and the depth format the renderer draws with, as bits: 1 = 2x,
+ * 2 = 4x, 4 = 8x. Set when the targets are made. The pause menu reads it, so that its anti-aliasing row can show a choice
+ * this graphics API cannot do (Metal has no 8x, say) greyed out as unsupported. */
+u8 g_msaaSupportMask = 0;
+
+static u8 Sdl3_SampleCountMask(SDL_GPUDevice *gpu)
+{
+    static const SDL_GPUSampleCount counts[3] = {SDL_GPU_SAMPLECOUNT_2, SDL_GPU_SAMPLECOUNT_4, SDL_GPU_SAMPLECOUNT_8};
+    u8 mask = 0;
+    int i;
+    for (i = 0; i < 3; i++)
+        if (SDL_GPUTextureSupportsSampleCount(gpu, SDL_GPU_TEXTUREFORMAT_R8G8B8A8_UNORM, counts[i]) &&
+            SDL_GPUTextureSupportsSampleCount(gpu, SDL_GPU_TEXTUREFORMAT_D16_UNORM, counts[i]))
+            mask |= (u8)(1 << i);
+    return mask;
+}
+
+/* the largest supported count up to wanted (mask as above); 1, no anti-aliasing, when wanted is below 2 or none fits */
+static SDL_GPUSampleCount Sdl3_BestSampleCount(u8 mask, int wanted)
 {
     static const struct {
         int n;
+        u8 bit;
         SDL_GPUSampleCount count;
-    } steps[] = {{8, SDL_GPU_SAMPLECOUNT_8}, {4, SDL_GPU_SAMPLECOUNT_4}, {2, SDL_GPU_SAMPLECOUNT_2}};
+    } steps[] = {{8, 4, SDL_GPU_SAMPLECOUNT_8}, {4, 2, SDL_GPU_SAMPLECOUNT_4}, {2, 1, SDL_GPU_SAMPLECOUNT_2}};
     int i;
-    if (wanted < 2)
-        return SDL_GPU_SAMPLECOUNT_1;
-    for (i = 0; i < 3; i++) {
-        if (steps[i].n > wanted)
-            continue;
-        if (SDL_GPUTextureSupportsSampleCount(gpu, SDL_GPU_TEXTUREFORMAT_R8G8B8A8_UNORM, steps[i].count) &&
-            SDL_GPUTextureSupportsSampleCount(gpu, SDL_GPU_TEXTUREFORMAT_D16_UNORM, steps[i].count)) {
-            if (steps[i].n != wanted)
-                SDL_Log("SheepD3D: MSAA %dx is not supported here, using %dx", wanted, steps[i].n);
+    for (i = 0; i < 3; i++)
+        if (steps[i].n <= wanted && (mask & steps[i].bit))
             return steps[i].count;
-        }
-    }
-    SDL_Log("SheepD3D: MSAA %dx is not supported here, anti-aliasing is off", wanted);
     return SDL_GPU_SAMPLECOUNT_1;
+}
+
+static SDL_GPUSampleCount Sdl3_PickSampleCount(SDL_GPUDevice *gpu, int wanted)
+{
+    SDL_GPUSampleCount count;
+    g_msaaSupportMask = Sdl3_SampleCountMask(gpu);
+    count = Sdl3_BestSampleCount(g_msaaSupportMask, wanted);
+    if (wanted >= 2 && (count == SDL_GPU_SAMPLECOUNT_1 ? 0 : 1 << (int)count) != wanted)
+        SDL_Log("SheepD3D: MSAA %dx is not supported here, using %s", wanted,
+                count == SDL_GPU_SAMPLECOUNT_1 ? "none" : (count == SDL_GPU_SAMPLECOUNT_2 ? "2x" : (count == SDL_GPU_SAMPLECOUNT_4 ? "4x" : "8x")));
+    return count;
 }
 
 /* Direct3D 7 values the backend interprets (render_device.h passes the game's) */
@@ -605,9 +625,9 @@ int Sdl3RenderDevice::CreateTargets()
     gpuWidth = Sdl3_ScaledSize(width);
     gpuHeight = Sdl3_ScaledSize(height);
     sampleCount = Sdl3_PickSampleCount(gpu, g_options.msaa);
-    /* what the menu shows is what runs: a sample count the GPU lacks is replaced by the one used */
-    g_options.msaa = sampleCount == SDL_GPU_SAMPLECOUNT_1 ? 0 : 1 << (int)sampleCount;
-    appliedMsaa = g_options.msaa;
+    /* g_options.msaa stays what was asked for: the menu shows a choice this GPU cannot do as unsupported, and what runs is
+     * the best supported sample count up to it */
+    appliedMsaa = g_options.msaa < 2 ? 0 : g_options.msaa;
 
     /* the frames: RGBA8 (the original's were 16-bit), a sampler source for the scaled blit into the window */
     SDL_zero(tex);
@@ -644,7 +664,7 @@ int Sdl3RenderDevice::CreateTargets()
             }
     }
     SDL_Log("SheepD3D: window %ux%u, rendering at %ux%u (%d%%), MSAA %dx", (unsigned)width, (unsigned)height,
-            (unsigned)gpuWidth, (unsigned)gpuHeight, appliedScale, sampleCount == SDL_GPU_SAMPLECOUNT_1 ? 0 : appliedMsaa);
+            (unsigned)gpuWidth, (unsigned)gpuHeight, appliedScale, sampleCount == SDL_GPU_SAMPLECOUNT_1 ? 0 : 1 << (int)sampleCount);
     return 1;
 }
 
@@ -659,6 +679,11 @@ void Sdl3RenderDevice::ApplyRenderSettings()
 
     if (Sdl3_RenderScale() == appliedScale && wantedMsaa == appliedMsaa)
         return;
+    /* a choice that runs as the sample count already running (an unsupported one, replaced by a supported one) needs no new targets */
+    if (Sdl3_RenderScale() == appliedScale && Sdl3_BestSampleCount(g_msaaSupportMask, wantedMsaa) == sampleCount) {
+        appliedMsaa = wantedMsaa;
+        return;
+    }
     SDL_WaitForGPUIdle(gpu);
     ReleaseTargets();
     for (i = 0; i < PK_COUNT; i++) {
