@@ -47,6 +47,33 @@ typedef void (*MenuHandler)(u8 msg, MenuPage *self);
 #include "mesh.h"
 #include "../platform/save_store.h"
 #include "../platform/options.h"
+
+/* The sample counts the renderer can do, as bits: 1 = 2x, 2 = 4x, 4 = 8x (sdl3_render_device.cpp). The anti-aliasing row
+ * shows a choice that is not in it greyed out, as unsupported. */
+extern u8 g_msaaSupportMask;
+
+static int PauseMenu_MsaaSupported(int count) /* 0, off, always is */
+{
+    return count == 0 || (count == 2 && (g_msaaSupportMask & 1)) || (count == 4 && (g_msaaSupportMask & 2)) ||
+           (count == 8 && (g_msaaSupportMask & 4));
+}
+
+/* wanted if it is supported, else the largest supported count below it (0: off) */
+static int PauseMenu_SupportedMsaa(int wanted)
+{
+    static const int counts[3] = {8, 4, 2};
+    int i;
+    for (i = 0; i < 3; i++)
+        if (counts[i] <= wanted && PauseMenu_MsaaSupported(counts[i]))
+            return counts[i];
+    return 0;
+}
+
+/* saves the screen percent and the anti-aliasing; an unsupported anti-aliasing choice is saved as the supported one it runs as */
+static void PauseMenu_SaveRenderSettings()
+{
+    Options_SaveRenderSettings(g_options.renderScale, PauseMenu_SupportedMsaa(g_options.msaa));
+}
 extern u32 g_gameFlags;
 extern u32 *g_screenLayerBase; /* 2D draw layers: layer n is g_screenLayerBase + n */
 
@@ -1007,7 +1034,7 @@ static void PauseMenu_ItemScreenPercent(u8 msg, MenuPage *item)
             g_options.renderScale = g_screenPercentSteps[(index + 1) % count];
             break;
         case MENU_MSG_VALUE_CHANGED:
-            Options_SaveRenderSettings(g_options.renderScale, g_options.msaa);
+            PauseMenu_SaveRenderSettings();
             Ui_PlayMoveSound();
             break;
     }
@@ -1030,7 +1057,16 @@ static void PauseMenu_ItemAntiAliasing(u8 msg, MenuPage *item)
             break;
         case MENU_MSG_DRAW:
             Menu_Printf(item, TEXTALIGN_LEFT, "Anti-Aliasing");
-            Menu_Printf(item, TEXTALIGN_RIGHT, "%s", names[index]);
+            if (PauseMenu_MsaaSupported(values[index])) {
+                Menu_Printf(item, TEXTALIGN_RIGHT, "%s", names[index]);
+            } else {
+                /* this graphics API cannot do it: greyed out, as the menu's disabled rows are, with "Unsupported" before
+                 * it. It can still be selected; Done turns it into the best supported choice. */
+                u32 savedColor = g_pCurFont->color;
+                g_pCurFont->color = 0xa0a0a0;
+                Menu_Printf(item, TEXTALIGN_RIGHT, "Unsupported %s", names[index]);
+                g_pCurFont->color = savedColor;
+            }
             break;
         case MENU_MSG_LEFT:
             g_options.msaa = values[(index + 3) % 4];
@@ -1039,7 +1075,7 @@ static void PauseMenu_ItemAntiAliasing(u8 msg, MenuPage *item)
             g_options.msaa = values[(index + 1) % 4];
             break;
         case MENU_MSG_VALUE_CHANGED:
-            Options_SaveRenderSettings(g_options.renderScale, g_options.msaa);
+            PauseMenu_SaveRenderSettings();
             Ui_PlayMoveSound();
             break;
     }
@@ -1087,6 +1123,9 @@ static void PauseMenu_ItemRewooledDone(u8 msg, MenuPage *item)
                               &g_pauseTextureFiltering, sizeof(g_pauseTextureFiltering));
                 Save_CloseKey(key);
             }
+            /* an unsupported anti-aliasing choice (greyed out in its row) becomes the best supported one */
+            g_options.msaa = PauseMenu_SupportedMsaa(g_options.msaa);
+            PauseMenu_SaveRenderSettings();
             Menu_GoBack();
             g_pauseSlidersShown = 1;
             break;
