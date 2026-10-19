@@ -166,7 +166,7 @@ static int Launcher_StartGame(const GameOptions &o) {
 static Uint32 s_pathPickedEvent;
 static Uint32 s_updateEvent; /* update_check.h: a newer release, data1 an UpdateCheckResult */
 
-enum { PICKED_FOLDER, PICKED_FILE, PICKED_OUTPUT_DIR };
+enum { PICKED_FOLDER, PICKED_FILE, PICKED_OUTPUT_DIR, PICKED_EXPORT_FOLDER, PICKED_EXPORT_ISO, PICKED_EXPORT_OUTPUT };
 
 /* userdata: the PICKED_ kind, passed on as the event's code */
 static void SDLCALL Launcher_OnPathPicked(void *userdata, const char *const *filelist, int filter) {
@@ -233,6 +233,29 @@ void Launcher_PickDiscImage(LauncherState &s) {
     s.picking = true;
     SDL_ShowOpenFileDialog(Launcher_OnPathPicked, (void *) (intptr_t) PICKED_FILE, s.window, filters,
                            (int) (sizeof(filters) / sizeof(filters[0])), 0, false);
+}
+
+/* the Language Export page's dialogs (popup_langexport.cpp): the game's files to export from, a game folder or a disc
+ * image, and the folder a pack is written in; their answers come back as s_pathPickedEvent */
+void Launcher_PickExportFolder(LauncherState &s) {
+    s.picking = true;
+    SDL_ShowOpenFolderDialog(Launcher_OnPathPicked, (void *) (intptr_t) PICKED_EXPORT_FOLDER, s.window,
+                             s.exportSource.empty() ? 0 : s.exportSource.c_str(), false);
+}
+
+void Launcher_PickExportIso(LauncherState &s) {
+    static const SDL_DialogFileFilter filters[] = {
+            {"Disc image (.iso, .bin, .cue)", "iso;bin;cue"},
+    };
+    s.picking = true;
+    SDL_ShowOpenFileDialog(Launcher_OnPathPicked, (void *) (intptr_t) PICKED_EXPORT_ISO, s.window, filters,
+                           (int) (sizeof(filters) / sizeof(filters[0])), 0, false);
+}
+
+void Launcher_PickExportOutput(LauncherState &s) {
+    s.picking = true;
+    SDL_ShowOpenFolderDialog(Launcher_OnPathPicked, (void *) (intptr_t) PICKED_EXPORT_OUTPUT, s.window,
+                             s.exportOutput.empty() ? 0 : s.exportOutput.c_str(), false);
 }
 
 /* a disc image's kind, from its extension (the file dialog only offers .cue, .bin and .iso): a .bin is a CUE/BIN's */
@@ -340,10 +363,23 @@ static bool Launcher_NeedsSetup(const LauncherState &s) {
     return !s.hasGameData;
 }
 
-/* the window has no title bar, so the banner moves it */
+/* the popup drawn this frame, in window coordinates (Launcher_SetPopupRect): what it covers of the banner is its own */
+static struct {
+    bool shown;
+    float x, y, w, h;
+} s_popupRect, s_popupRectDrawing;
+
+void Launcher_SetPopupRect(float x, float y, float w, float h) {
+    s_popupRectDrawing = {true, x, y, w, h};
+}
+
+/* the window has no title bar, so the banner moves it: the part of it no popup is drawn over */
 static SDL_HitTestResult Launcher_HitTest(SDL_Window *window, const SDL_Point *point, void *) {
     int w = 0, h = 0;
     SDL_GetWindowSize(window, &w, &h);
+    if (s_popupRect.shown && point->x >= s_popupRect.x && point->x < s_popupRect.x + s_popupRect.w &&
+        point->y >= s_popupRect.y && point->y < s_popupRect.y + s_popupRect.h)
+        return SDL_HITTEST_NORMAL;
     return point->y < Launcher_BannerHeight((float) w) ? SDL_HITTEST_DRAGGABLE : SDL_HITTEST_NORMAL;
 }
 
@@ -474,7 +510,13 @@ int main(int argc, char **argv) {
                 state.picking = false;
                 if (e.user.data1) {
                     const char *path = (const char *) e.user.data1;
-                    if (e.user.code == PICKED_OUTPUT_DIR) { /* where a disc image goes: not the source */
+                    if (e.user.code == PICKED_EXPORT_FOLDER || e.user.code == PICKED_EXPORT_ISO) {
+                        /* the Language Export page's source: a .cue is read through the .bin it names */
+                        state.exportSource = e.user.code == PICKED_EXPORT_ISO ? Launcher_DiscBinPath(path) : path;
+                        state.exportSourceChanged = true;
+                    } else if (e.user.code == PICKED_EXPORT_OUTPUT) {
+                        state.exportOutput = path;
+                    } else if (e.user.code == PICKED_OUTPUT_DIR) { /* where a disc image goes: not the source */
                         state.outputDir = path;
                     } else if (e.user.code == PICKED_FOLDER) {
                         state.sourcePath = path; /* the game folder itself */
@@ -497,6 +539,7 @@ int main(int argc, char **argv) {
         ImGui_ImplSDLRenderer3_NewFrame();
         ImGui_ImplSDL3_NewFrame();
         ImGui::NewFrame();
+        s_popupRectDrawing.shown = false; /* the popups drawn this frame set it (Popup_Begin) */
         ImGui::SetNextWindowPos(ImVec2(0, 0));
         ImGui::SetNextWindowSize(io.DisplaySize);
         ImGui::Begin("launcher", 0,
@@ -515,10 +558,12 @@ int main(int argc, char **argv) {
         SDL_RenderClear(renderer);
         ImGui_ImplSDLRenderer3_RenderDrawData(ImGui::GetDrawData(), renderer);
         SDL_RenderPresent(renderer);
+        s_popupRect = s_popupRectDrawing; /* what the drag area leaves out until the next frame is drawn */
     }
 
     UpdateCheck_Stop(); /* a check still waiting for GitHub ends here, before the game starts and SDL quits */
     Extract_Shutdown();
+    PopupLangExport_Shutdown();
 
     if (state.play && !state.renderers.empty()) {
         strncpy(state.options.renderer, state.renderers[state.rendererIndex]->name, sizeof(state.options.renderer) - 1);

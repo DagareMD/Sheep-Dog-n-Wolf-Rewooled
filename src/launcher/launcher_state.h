@@ -66,6 +66,9 @@ struct LauncherState {
     bool sourceReady;                              /* its data is in a game folder (options.exeDir): at once for a folder,
                                                     * after the extraction for a disc image */
     std::string outputDir;                         /* where a disc image is extracted to (Save_Dir by default) */
+    std::string exportSource;                      /* the Language Export page's game files: a folder or a disc image */
+    bool exportSourceChanged;                      /* a dialog chose exportSource: the page reads it */
+    std::string exportOutput;                      /* the folder the Language Export page writes a pack in */
 };
 
 /* launcher.cpp's helpers, for the popups */
@@ -73,6 +76,9 @@ void Launcher_ResetSaves();                    /* deletes the saved games and th
 void Launcher_PickFolder(LauncherState &s);    /* the folder dialog: the game folder, options.exeDir; picking until it answers */
 void Launcher_PickDiscImage(LauncherState &s); /* the file dialog for a .cue or .iso: sourcePath; picking until it answers */
 void Launcher_PickOutputDir(LauncherState &s); /* the folder dialog for outputDir; picking until it answers */
+void Launcher_PickExportFolder(LauncherState &s); /* the Language Export page's: a game folder, as exportSource */
+void Launcher_PickExportIso(LauncherState &s);    /* the Language Export page's: a disc image, as exportSource */
+void Launcher_PickExportOutput(LauncherState &s); /* the Language Export page's: the folder a pack goes in, exportOutput */
 bool Launcher_CheckSource(GameSourceKind kind, const char *path); /* a quick look: run on the UI thread */
 std::string Launcher_DiscBinPath(const std::string &path); /* a .cue's .bin (its FILE line); a .bin as it is; "" if none */
 std::string Launcher_DefaultGameDir();         /* where the game looks when options.exeDir is empty */
@@ -93,9 +99,12 @@ void Extract_Draw(LauncherState &s);           /* its progress and Cancel, or it
 void Extract_Shutdown();                       /* before exiting: stops and joins it, if running */
 void ScreenMain_Draw(LauncherState &s);
 
+/* the popup being drawn, in window coordinates: the window's drag area (its banner) leaves it out (launcher.cpp) */
+void Launcher_SetPopupRect(float x, float y, float w, float h);
 /* the frame every popup shares: centred, modal, with a Close button at the bottom (popup_common.cpp) */
 bool Popup_Begin(const char *id, bool canClose = true); /* canClose false: Escape does not close it */
-void Popup_Label(const char *label);          /* a setting's label; the next widget fills the rest of its line */
+void Popup_Label(const char *label, float labelWidth = 110); /* a setting's label, in a column labelWidth wide; the next
+                                                             * widget fills the rest of its line */
 void Popup_End(bool canClose = true);         /* canClose false: its Close button is disabled */
 
 void PopupInstall_Open();
@@ -106,5 +115,8 @@ void PopupCredits_Open();
 void PopupCredits_Draw();
 void PopupAdvanced_Open();
 void PopupAdvanced_Draw(LauncherState &s);
+void PopupLangExport_Open(LauncherState &s);
+void PopupLangExport_Draw(LauncherState &s);
+void PopupLangExport_Shutdown();               /* before exiting: waits for an export in progress */
 
 #endif

@@ -51,6 +51,7 @@ inline HRESULT D3DApp::ShowFrame()
 #include "../objects/video_sequence.h"
 u8 Video_PlaySequence(FmvList *list);
 #include "app_main.h"
+#include "../engine/langpack.h"
 
 /* ---- globals ---- */
 extern HWND g_hGameWindow;
@@ -156,6 +157,8 @@ int Game_Main(int argc, char **argv)
         return 1;
     }
     g_langMask = App_GetLanguageMask();
+    LangPack_SetLog([](const char *text) { Platform_Log("%s", text); });
+    LangPack_Init(exeDir); /* the languages: the game's own and the packs in Languages/ (langpack.h) */
     if (!Platform_Init(szTitle, IDI_APP_ICON)) {
         App_Error("SDL could not be initialised.");
         return 1;

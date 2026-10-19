@@ -334,6 +334,7 @@ extern s32 g_dtRawMs;
 #include "../engine/text.h"
 #include "../engine/input.h"
 #include "../engine/load_warmeshes.h"
+#include "../engine/langpack.h"
 extern u32 *g_screenLayerBase;
 
 extern TextPort g_textPort;
@@ -565,9 +566,10 @@ s32 Card_CommitBlock(s32 slot, s32 overwrite)
     return result;
 }
 
+/* Rewooled: from the text language's pack, else this table in the language it is built on (langpack.h) */
 const char *MCard_GetString(u32 id)
 {
-    return g_mcardStrings[g_pProgress->GetLanguage()][(u8)id];
+    return LangPack_SaveString(id);
 }
 
 /* Two observed word-pair copies preserve the local rectangle. */

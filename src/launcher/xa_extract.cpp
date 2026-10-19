@@ -106,7 +106,29 @@ struct IsoFile {
     std::string path;
     uint32_t lba;
     uint32_t size;
+    // a UDF file's data when it is not one run of sectors from lba: its extents (first sector, bytes), or the bytes
+    // themselves when the file entry holds them (listUdfFiles)
+    std::vector<std::pair<uint32_t, uint32_t>> extents;
+    std::vector<uint8_t> embedded;
 };
+
+// sector `index` of the file's data (2048 bytes; past its end, whatever the disc has there)
+bool readFileSector(Disc& disc, const IsoFile& f, uint32_t index, uint8_t* out) {
+    if (!f.embedded.empty()) {
+        std::memset(out, 0, 2048);
+        size_t from = size_t(index) * 2048;
+        if (from < f.embedded.size())
+            std::memcpy(out, &f.embedded[from], std::min<size_t>(2048, f.embedded.size() - from));
+        return true;
+    }
+    if (f.extents.empty()) return disc.readData(f.lba + index, out);
+    for (const auto& e : f.extents) {
+        uint32_t sectors = (e.second + 2047) / 2048;
+        if (index < sectors) return disc.readData(e.first + index, out);
+        index -= sectors;
+    }
+    return false;
+}
 
 uint32_t le32(const uint8_t* p) { return p[0] | (p[1] << 8) | (p[2] << 16) | (uint32_t(p[3]) << 24); }
 
@@ -176,6 +198,151 @@ std::vector<IsoFile> listFiles(Disc& disc) {
         }
     }
     walkDirectory(disc, le32(root + 2), le32(root + 10), "", files, joliet);
+    return files;
+}
+
+// ---------------------------------------------------------------- UDF
+// A PC disc can carry a UDF file system beside its ISO9660 one (the Portuguese fan translation's: its ISO9660 names
+// are cut to 8.3, LVL_00 and CIN02_SC.WAV, where the game reads Lvl-00 and Cin02_sc_reL001.wav). Its files are listed
+// from the UDF side when there is one (ECMA-167 / OSTA UDF 1.02-2.01): the Anchor at sector 256, the partition and
+// logical volume descriptors, the file set's root directory, and its file entries.
+
+uint16_t le16(const uint8_t* p) { return uint16_t(p[0] | (p[1] << 8)); }
+
+struct Udf {
+    Disc& disc;
+    uint32_t partStart = 0;
+    bool ok = false;
+
+    explicit Udf(Disc& d) : disc(d) {}
+
+    bool readBlock(uint32_t lbn, uint8_t* out) { return disc.readData(partStart + lbn, out); }
+
+    // a file entry's data: its extents (absolute first sector, bytes) or its embedded bytes, and its length
+    bool entryData(uint32_t lbn, std::vector<std::pair<uint32_t, uint32_t>>& extents, std::vector<uint8_t>& embedded,
+                   uint64_t& length, bool& isDir) {
+        uint8_t fe[2048];
+        if (!readBlock(lbn, fe)) return false;
+        uint16_t tag = le16(fe);
+        if (tag != 261 && tag != 266) return false;
+        isDir = fe[16 + 11] == 4;
+        length = uint64_t(le32(fe + 56)) | (uint64_t(le32(fe + 60)) << 32);
+        uint32_t lea = le32(fe + (tag == 261 ? 168 : 208)), lad = le32(fe + (tag == 261 ? 172 : 212));
+        uint32_t at = (tag == 261 ? 176 : 216) + lea;
+        if (at + lad > 2048) return false;
+        switch (le16(fe + 16 + 18) & 7) {
+            case 0: // short_ad: length (top two bits the kind), block
+                for (uint32_t i = 0; i + 8 <= lad; i += 8) {
+                    uint32_t len = le32(fe + at + i) & 0x3FFFFFFF;
+                    if (!len) break;
+                    extents.push_back({partStart + le32(fe + at + i + 4), len});
+                }
+                return true;
+            case 1: // long_ad: length, block, partition
+                for (uint32_t i = 0; i + 16 <= lad; i += 16) {
+                    uint32_t len = le32(fe + at + i) & 0x3FFFFFFF;
+                    if (!len) break;
+                    extents.push_back({partStart + le32(fe + at + i + 4), len});
+                }
+                return true;
+            case 3: // the data in the entry itself
+                embedded.assign(fe + at, fe + at + lad);
+                return true;
+        }
+        return false;
+    }
+
+    // a directory's whole contents
+    bool readAll(const std::vector<std::pair<uint32_t, uint32_t>>& extents, const std::vector<uint8_t>& embedded,
+                 uint64_t length, std::vector<uint8_t>& out) {
+        if (!embedded.empty()) {
+            out = embedded;
+            return true;
+        }
+        out.clear();
+        uint8_t sector[2048];
+        for (const auto& e : extents)
+            for (uint32_t i = 0; i * 2048 < e.second; ++i) {
+                if (!disc.readData(e.first + i, sector)) return false;
+                out.insert(out.end(), sector, sector + std::min<uint32_t>(2048, e.second - i * 2048));
+            }
+        if (out.size() > length) out.resize(length);
+        return true;
+    }
+
+    // a file identifier: CS0, 8 or 16 bits a character, as UTF-8
+    static std::string name(const uint8_t* p, size_t bytes) {
+        if (!bytes) return {};
+        std::string out;
+        if (p[0] == 16) return jolietName(p + 1, bytes - 1);
+        for (size_t i = 1; i < bytes; ++i) {
+            uint8_t c = p[i];
+            if (c < 0x80) out += char(c);
+            else {
+                out += char(0xC0 | (c >> 6));
+                out += char(0x80 | (c & 0x3F));
+            }
+        }
+        return out;
+    }
+
+    void walk(uint32_t lbn, const std::string& prefix, std::vector<IsoFile>& files, int depth) {
+        std::vector<std::pair<uint32_t, uint32_t>> extents;
+        std::vector<uint8_t> embedded, dir;
+        uint64_t length = 0;
+        bool isDir = false;
+        if (depth > 16 || !entryData(lbn, extents, embedded, length, isDir) || !isDir ||
+            !readAll(extents, embedded, length, dir))
+            return;
+        for (size_t at = 0; at + 38 <= dir.size();) {
+            const uint8_t* fid = &dir[at];
+            if (le16(fid) != 257) break;
+            uint8_t chars = fid[18], lfi = fid[19];
+            uint32_t icb = le32(fid + 24);
+            uint16_t liu = le16(fid + 36);
+            size_t total = (38 + liu + lfi + 3) & ~size_t(3);
+            if (at + 38 + liu + lfi > dir.size()) break;
+            if (!(chars & 0x08) && !(chars & 0x04)) { // not the parent, not deleted
+                std::string n = name(fid + 38 + liu, lfi);
+                if (chars & 0x02) walk(icb, prefix + n + "/", files, depth + 1);
+                else {
+                    IsoFile f;
+                    f.path = prefix + n;
+                    bool d = false;
+                    uint64_t len = 0;
+                    if (entryData(icb, f.extents, f.embedded, len, d)) {
+                        f.size = uint32_t(len);
+                        f.lba = f.extents.empty() ? 0 : f.extents[0].first;
+                        if (f.extents.size() == 1) f.extents.clear(); // one run from lba
+                        files.push_back(std::move(f));
+                    }
+                }
+            }
+            at += total;
+        }
+    }
+};
+
+// every file on the disc by its UDF name; empty when the disc has no UDF file system
+std::vector<IsoFile> listUdfFiles(Disc& disc) {
+    std::vector<IsoFile> files;
+    uint8_t b[2048];
+    bool nsr = false;
+    for (uint32_t lba = 16; lba < 16 + 32 && disc.readData(lba, b); ++lba)
+        if (std::memcmp(b + 1, "NSR02", 5) == 0 || std::memcmp(b + 1, "NSR03", 5) == 0) nsr = true;
+    if (!nsr || !disc.readData(256, b) || le16(b) != 2) return files;
+    uint32_t vdsLength = le32(b + 16), vds = le32(b + 20);
+    Udf udf(disc);
+    uint32_t fsdBlock = 0;
+    bool partition = false, volume = false;
+    for (uint32_t i = 0; i < vdsLength / 2048 && i < 64 && disc.readData(vds + i, b); ++i) {
+        uint16_t tag = le16(b);
+        if (tag == 5) { udf.partStart = le32(b + 188); partition = true; }
+        else if (tag == 6) { fsdBlock = le32(b + 252); volume = le32(b + 212) == 2048; }
+        else if (tag == 8) break;
+    }
+    if (!partition || !volume || !udf.readBlock(fsdBlock, b) || le16(b) != 256) return files;
+    udf.walk(le32(b + 404), "", files, 0);
     return files;
 }
 
@@ -1132,7 +1299,7 @@ void writeGeneratedFile(ExtractionSettings& s, const char* relPath, const std::v
 
 // "GREETINGV1.0", the entry count, then per entry its key, its length (with the terminating 0) and its text, all
 // little-endian (src/objects/textresbank.cpp reads it).
-void writeGreetBsm(ExtractionSettings& s) {
+std::vector<uint8_t> buildGreetBsm() {
     std::vector<uint8_t> content;
     const char magic[] = "GREETINGV1.0";
     content.insert(content.end(), magic, magic + 12);
@@ -1143,7 +1310,11 @@ void writeGreetBsm(ExtractionSettings& s) {
         putLe32(content, len);
         content.insert(content.end(), g.text, g.text + len);
     }
-    writeGeneratedFile(s, GREET_PATH, content);
+    return content;
+}
+
+void writeGreetBsm(ExtractionSettings& s) {
+    writeGeneratedFile(s, GREET_PATH, buildGreetBsm());
 }
 
 // ---------------------------------------------------------------- References/MusicVoice.BSV
@@ -1235,7 +1406,7 @@ bool copyPcGame(Disc& disc, const std::vector<IsoFile>& files, ExtractionSetting
         if (!out) throw std::runtime_error("Cannot write " + outPath.string());
         for (uint32_t i = 0, done = 0; done < f.size; ++i) {
             if (s.cancelRequested) return false;
-            if (!disc.readData(f.lba + i, data)) throw std::runtime_error("Read error in " + f.path);
+            if (!readFileSector(disc, f, i, data)) throw std::runtime_error("Read error in " + f.path);
             uint32_t n = std::min<uint32_t>(f.size - done, 2048);
             out.write(reinterpret_cast<const char*>(data), n);
             done += n;
@@ -1250,7 +1421,87 @@ bool copyPcGame(Disc& disc, const std::vector<IsoFile>& files, ExtractionSetting
     }
     return true;
 }
+
+// ---------------------------------------------------------------- a disc's files, read in place
+
+// the disc's files by their paths, and its folders' entries (DiscFiles, xa_extract.h)
+class DiscFilesImpl : public DiscFiles {
+public:
+    explicit DiscFilesImpl(const fs::path& image) : disc(image) {}
+
+    Disc disc;
+    std::vector<IsoFile> files;
+    std::map<std::string, size_t> byPath;
+    std::map<std::string, std::vector<std::pair<std::string, bool>>> folders;
+
+    // every folder on the way to each file, with what is in it
+    void index() {
+        folders[""];
+        for (size_t i = 0; i < files.size(); ++i) {
+            const std::string& path = files[i].path;
+            byPath[path] = i;
+            size_t start = 0;
+            for (;;) {
+                size_t slash = path.find('/', start);
+                std::string parent = start ? path.substr(0, start - 1) : "";
+                std::string name = path.substr(start, slash == std::string::npos ? std::string::npos : slash - start);
+                auto& entries = folders[parent];
+                if (std::find_if(entries.begin(), entries.end(), [&](const std::pair<std::string, bool>& e) {
+                        return e.first == name;
+                    }) == entries.end())
+                    entries.push_back({name, slash != std::string::npos});
+                if (slash == std::string::npos) break;
+                folders[path.substr(0, slash)];
+                start = slash + 1;
+            }
+        }
+    }
+
+    bool list(const std::string& folder, std::vector<std::pair<std::string, bool>>& entries) override {
+        auto it = folders.find(folder);
+        if (it == folders.end()) return false;
+        entries = it->second;
+        return true;
+    }
+
+    bool read(const std::string& file, std::string& data) override {
+        auto it = byPath.find(file);
+        if (it == byPath.end()) return false;
+        const IsoFile& f = files[it->second];
+        data.assign(f.size, 0);
+        uint8_t sector[2048];
+        for (uint32_t i = 0, done = 0; done < f.size; ++i) {
+            if (!readFileSector(disc, f, i, sector)) return false;
+            uint32_t n = std::min<uint32_t>(f.size - done, 2048);
+            std::memcpy(&data[done], sector, n);
+            done += n;
+        }
+        return true;
+    }
+};
+
 } // namespace
+
+std::unique_ptr<DiscFiles> DiscFiles::open(const std::filesystem::path& image, std::string& error) {
+    std::unique_ptr<DiscFilesImpl> d(new DiscFilesImpl(image));
+    if (!d->disc.ok() || !d->disc.isIso9660()) {
+        error = "Neither a game folder nor a disc image the launcher can read (.iso, .bin): " + image.string();
+        return nullptr;
+    }
+    d->files = listUdfFiles(d->disc); // the real names, when the disc has them (the Portuguese translation's)
+    if (d->files.empty()) d->files = listFiles(d->disc);
+    if (d->files.empty()) {
+        error = "No files found on " + image.string();
+        return nullptr;
+    }
+    d->index();
+    return d;
+}
+
+std::string greetCatalogue() {
+    std::vector<uint8_t> bytes = buildGreetBsm();
+    return std::string(reinterpret_cast<const char*>(bytes.data()), bytes.size());
+}
 
 bool extractXaAudio(ExtractionSettings* settings) {
     if (!settings) return false;
@@ -1302,7 +1553,9 @@ bool extractXaAudio(ExtractionSettings* settings) {
             jobs.push_back({f, isVoice ? s.voiceGapMs : s.musicGapMs});
             sectorsTotal += (f.size + 2047) / 2048;
         }
-        if (jobs.empty()) { // no XA audio: the PC release
+        if (jobs.empty()) { // no XA audio: the PC release, by its UDF names when it has them
+            std::vector<IsoFile> udf = listUdfFiles(disc);
+            if (!udf.empty()) files = std::move(udf);
             if (!copyPcGame(disc, files, s)) return cancelled();
             return done();
         }

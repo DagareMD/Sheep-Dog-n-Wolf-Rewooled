@@ -465,6 +465,10 @@ add_executable(SheepLauncher ${SDW_LAUNCHER_KIND}
         src/launcher/popup_video.cpp
         src/launcher/popup_credits.cpp
         src/launcher/popup_advanced.cpp
+        src/launcher/popup_langexport.cpp
+        src/launcher/langexport.cpp         # the Language Export page's work
+        src/launcher/langexport_psxdav.cpp
+        src/launcher/langexport_tables.cpp
         src/platform/options.c
         src/platform/save_store.c
         ${imgui_SOURCE_DIR}/imgui.cpp

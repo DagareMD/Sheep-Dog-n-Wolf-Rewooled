@@ -12,12 +12,14 @@ extern Font *g_pCurFont;
 extern char g_textScratchBuffer[0x3f0];
 void Font_CloneResized(u8 srcFontId, u8 dstFontId, u8 advancePlus1, u8 heightMinus1);
 s8 Font_LoadFromRes(u8 fontId, u16 resType, u8 cellGeometry);
+void Font_UsePackFont(); /* Rewooled: the text language's own font, when its pack has one (text.cpp) */
 u32 Font_SetCellSize(u8, u8);
 void Hud_EndBox_stub();
 s32 ScrollText_Run(u8 mode, char *text, s32 allowInput); /* (src/engine/text.cpp) */
 u16 Str_ParseU16(const char *s);
 void Text_ApplyWindow(u32 *layer);
 void Text_CenterVertically(s32 lines);
+u16 Text_CountWrappedLines(const char *s);
 /* HudElement centre reader; reads the window when its first coordinate is mapped. */
 void Text_ElementCentre(const void *data, float &x, float &y);
 void Text_Disable();

@@ -28,6 +28,7 @@ class Mat44;
 #include "draw2d.h"
 #include "../app/app_main.h"
 #include "../platform/platform.h"
+#include "langpack.h"
 
 /* ---- globals ---- */
 extern u32 *g_screenLayerBase0; /* u32 *, as its definition (src/app/app_main.cpp) declares it */
@@ -92,6 +93,11 @@ void Game_FreeLevel()
 void Game_ReloadLevel()
 {
     u8 loaded;
+    /* Rewooled: a text language chosen since the last level load takes effect now (langpack.h); the game code that
+     * reads the config language is given a baked-in language's own (a pack has none: it is left as it is) */
+    LangPack_ApplyChosen();
+    if (LangPack_GameLanguage() >= 0)
+        g_pProgress->language = (u8)LangPack_GameLanguage();
     g_screen.Init(0);
     g_screen.Clear(0);
     ((GameState *)&g_animDt)->Game_ResetState();

@@ -8,4 +8,8 @@ class StreamPlayer;
 
 extern StreamPlayer *g_pStreamPlayer;
 
+/* the folder under Voices/ the game plays language `language`'s voices from (Progress.language), with its slash
+ * ("English/"): StreamPlayer::PlayVoice's switch */
+const char *StreamPlayer_VoiceFolder(s32 language);
+
 #endif

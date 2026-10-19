@@ -362,6 +362,7 @@ u8 Load_DAVnWAR(const char *levelPath, Dav *dav)
         Debug_Printf("Load_DAVnWAR(): Debug Fonte Loading\n");
     if (Font_LoadFromRes(FONT_GAME, DAV_IDI_IGLTYPO_, FONT_KIND_GAME) < 0)
         Debug_Printf("Load_DAVnWAR(): Game Fonte Loading\n");
+    Font_UsePackFont(); /* Rewooled: the text language's own font (langpack.h), before the small one is made from it */
     Font_CloneResized(FONT_GAME, FONT_GAME_SMALL, 10, 12);
     Debug_Printf("{Font loaded\n");
     Text_SetFont(FONT_DEBUG);

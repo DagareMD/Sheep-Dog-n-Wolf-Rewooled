@@ -64,6 +64,8 @@ struct DavDirectory {
 #include "game_state.h"
 #include "screen.h"
 #include "draw2d.h"
+#include "langpack.h"
+#include "polybatcher.h"
 s32 Rand_Bounded(s32 bound);
 u16 Str_Length(const char *s);
 uptr *Res_GetValidatedIdList(u16 resId, u16 *outCount);
@@ -1191,6 +1193,13 @@ void Text_ScrambleGlyphs(char *s)
             } while (ch != '$');
         } else if (ch == '%') {
             s++;
+        } else if (ch >= 0x20 && LangPack_FontActive()) {
+            /* Rewooled: a language pack's font (langpack.h): its cells are its own, so a variant is taken only where
+             * it draws the same character, and the game's own byte conventions (0x92, 0xce, 0xee) do not apply */
+            if (rnd < 0x2a)
+                *s = (char)LangPack_GlyphVariant(ch, g_glyphVariantFwd[ch]);
+            else if (rnd < 0x54)
+                *s = (char)LangPack_GlyphVariant(ch, g_glyphVariantRev[ch]);
         } else if (ch >= 0x20) {
             if (ch == 0x92)
                 ch = '\'';
@@ -1222,7 +1231,7 @@ void Text_BlinkButtonGlyphs(char *s)
             if (ch == 1)
                 s += 3;
             else if (ch >= 0x20)
-                *s = g_glyphVariantFwd[ch];
+                *s = (char)LangPack_GlyphVariant(ch, g_glyphVariantFwd[ch]); /* Rewooled: as the shuffle above */
             s++;
         }
     } else if (g_textBlinkPhase < 0x7c) {
@@ -1230,7 +1239,7 @@ void Text_BlinkButtonGlyphs(char *s)
             if (ch == 1)
                 s += 3;
             else if (ch >= 0x20)
-                *s = g_glyphVariantRev[ch];
+                *s = (char)LangPack_GlyphVariant(ch, g_glyphVariantRev[ch]);
             s++;
         }
     }
@@ -1918,6 +1927,8 @@ void Font_CloneResized(u8 srcFontId, u8 dstFontId, u8 advancePlus1, u8 heightMin
 /* makes g_fonts[fontId] the current font and loads it from the DAV bitmap of resource list resType, which
  * must hold exactly one entry; cellGeometry 1 is the 8x16-cell debug font, 2 the 16x16-cell game font. Enables text.
  * The list is dereferenced before its count is checked (a missing list would crash, not return -1). */
+static u8 s_gameFontIsGrid = 1; /* Rewooled: Font_UsePackFont */
+
 s8 Font_LoadFromRes(u8 fontId, u16 resType, u8 cellGeometry)
 {
     DavBitmapRec *rec;
@@ -1948,6 +1959,8 @@ s8 Font_LoadFromRes(u8 fontId, u16 resType, u8 cellGeometry)
             g_pCurFont->lineHeight = 0x11;
             break;
     }
+    if (fontId == FONT_GAME) /* Rewooled: the game's grid of 16 x 14 cells, not Intro's lettering */
+        s_gameFontIsGrid = rec->width == 256 && rec->height == 224;
     g_pCurFont->sheetU = rec->u;
     g_pCurFont->sheetV = rec->v;
     Text_ResetWindow();
@@ -1956,6 +1969,23 @@ s8 Font_LoadFromRes(u8 fontId, u16 resType, u8 cellGeometry)
     g_pCurFont->color = 0x4bccff;
     g_textEnabled = 1;
     return 0;
+}
+
+/* Rewooled: the game font from the text language's pack (langpack.h), when it has one of its own: its font.png, a
+ * page of the batcher's of its own, in place of the level's font bitmap. The grid is the game's: 16 cells across, from
+ * character 0x20. */
+void Font_UsePackFont()
+{
+    const char *png = LangPack_FontPicture();
+    s32 page;
+    if (!png || !*png || !s_gameFontIsGrid) /* not over Intro's own lettering (langpack.cpp: LevelFontIsGrid) */
+        return;
+    page = PolyBatcher_AddImagePage(png, 1);
+    if (page < 0)
+        return;
+    g_fonts[FONT_GAME].texPage = page;
+    g_fonts[FONT_GAME].sheetU = 0;
+    g_fonts[FONT_GAME].sheetV = 0;
 }
 
 /* empty, no callers. */
