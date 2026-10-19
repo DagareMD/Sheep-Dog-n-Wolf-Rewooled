@@ -48,6 +48,34 @@ typedef void (*MenuHandler)(u8 msg, MenuPage *self);
 #include "approach.h"
 #include "mesh.h"
 #include "../platform/save_store.h"
+#include "../platform/options.h"
+
+/* The sample counts the renderer can do, as bits: 1 = 2x, 2 = 4x, 4 = 8x (sdl3_render_device.cpp). The anti-aliasing row
+ * shows a choice that is not in it greyed out, as unsupported. */
+extern u8 g_msaaSupportMask;
+
+static int PauseMenu_MsaaSupported(int count) /* 0, off, always is */
+{
+    return count == 0 || (count == 2 && (g_msaaSupportMask & 1)) || (count == 4 && (g_msaaSupportMask & 2)) ||
+           (count == 8 && (g_msaaSupportMask & 4));
+}
+
+/* wanted if it is supported, else the largest supported count below it (0: off) */
+static int PauseMenu_SupportedMsaa(int wanted)
+{
+    static const int counts[3] = {8, 4, 2};
+    int i;
+    for (i = 0; i < 3; i++)
+        if (counts[i] <= wanted && PauseMenu_MsaaSupported(counts[i]))
+            return counts[i];
+    return 0;
+}
+
+/* saves the screen percent and the anti-aliasing; an unsupported anti-aliasing choice is saved as the supported one it runs as */
+static void PauseMenu_SaveRenderSettings()
+{
+    Options_SaveRenderSettings(g_options.renderScale, PauseMenu_SupportedMsaa(g_options.msaa));
+}
 extern u32 g_gameFlags;
 extern u32 *g_screenLayerBase; /* 2D draw layers: layer n is g_screenLayerBase + n */
 
@@ -83,6 +111,7 @@ static u8 g_pauseMeshOutlines = 1;   /* accepted outline setting; Done keeps the
 /* Rewooled Settings' languages while the page is open (langpack.h): saved by Done, dropped otherwise */
 static s32 g_pauseTextLanguage = 0;
 static s32 g_pauseVoiceLanguage = -1; /* -1: the text language's own voices */
+static u8 g_pauseTextureFiltering = 1; /* accepted texture filtering setting; Done keeps the preview */
 s16 g_pauseResumeIndex = 0;          /* node index of "resume", where the cursor returns */
 u8 g_menuFooterStyle = 0;            /* which footer the menu draws */
 u8 g_menuFooterStylePrev = 0;        /* last frame's g_menuFooterStyle; nothing reads it */
@@ -170,6 +199,9 @@ void PauseMenu_ItemFog(u8 msg, MenuPage *item);
 static void PauseMenu_ItemMeshOutlines(u8 msg, MenuPage *item);
 static void PauseMenu_ItemTextLanguage(u8 msg, MenuPage *item);
 static void PauseMenu_ItemVoiceLanguage(u8 msg, MenuPage *item);
+static void PauseMenu_ItemTextureFiltering(u8 msg, MenuPage *item);
+static void PauseMenu_ItemScreenPercent(u8 msg, MenuPage *item);
+static void PauseMenu_ItemAntiAliasing(u8 msg, MenuPage *item);
 void PauseMenu_ItemDisplayDone(u8 msg, MenuPage *item);
 void PauseMenu_ItemControlDevice(u8 msg, MenuPage *item);
 void PauseMenu_ItemCameraSpeed(u8 msg, MenuPage *item);
@@ -237,7 +269,8 @@ inline ProgressOptionBits *Progress_Options()
     return &g_pProgress->optionBits;
 }
 
-static u8 PauseMenu_LoadOutlineSetting()
+/* a Yes/No setting stored as a one-byte REG_BINARY value in the "CfgGame" key; missing or invalid means Yes */
+static u8 PauseMenu_LoadBoolSetting(const char *name)
 {
     if (!Save_KeyExists("CfgGame"))
         return 1;
@@ -246,11 +279,21 @@ static u8 PauseMenu_LoadOutlineSetting()
         return 1;
     u8 enabled = 1;
     unsigned type = 0, size = sizeof(enabled);
-    if (Save_QueryValue(key, "CelShadingOutlines", &type, &enabled, &size) != SAVE_OK ||
+    if (Save_QueryValue(key, name, &type, &enabled, &size) != SAVE_OK ||
         type != 3 || size != sizeof(enabled) || enabled > 1)
         enabled = 1;
     Save_CloseKey(key);
     return enabled;
+}
+
+static u8 PauseMenu_LoadOutlineSetting()
+{
+    return PauseMenu_LoadBoolSetting("CelShadingOutlines");
+}
+
+static u8 PauseMenu_LoadTextureFilteringSetting()
+{
+    return PauseMenu_LoadBoolSetting("TextureFiltering");
 }
 
 /* per-level UI set-up, called once by Load_DAVnWAR: the pause box, the slider cursors' skins, the UI
@@ -261,6 +304,7 @@ void Menus_LoadLevelUi()
     u8 playerLang;
 
     g_meshOutlinesEnabled = g_pauseMeshOutlines = PauseMenu_LoadOutlineSetting();
+    g_textureFilteringEnabled = g_pauseTextureFiltering = PauseMenu_LoadTextureFilteringSetting();
     g_pauseFlag89 = 1;
     g_pauseSlidersShown = 0;
     PauseMenu_SetBox(0x1c0, 0xa0);
@@ -352,6 +396,7 @@ void PauseMenu_Exit()
 
     Menu_Close();
     g_meshOutlinesEnabled = g_pauseMeshOutlines;
+    g_textureFilteringEnabled = g_pauseTextureFiltering;
     // Keep the existing music stream unless the sound mode disables it or it needs starting.
     if (g_pProgress->optionBits.soundMode != SOUNDMODE_ALL)
         g_pStreamPlayer->Halt();
@@ -722,7 +767,9 @@ void PauseMenu_Build()
     bindPage = Menu_AddPage(padPage, (void *)PauseMenu_PageEditConfig, 1);
     Menu_AddItems(rewooledPage, PauseMenu_ItemCameraSpeed, PauseMenu_ItemCameraAcceleration,
                   PauseMenu_ItemInvertCameraJoystick, PauseMenu_ItemMeshOutlines, PauseMenu_ItemTextLanguage,
-                  PauseMenu_ItemVoiceLanguage, PauseMenu_ItemRewooledDone, MENU_END);
+                  PauseMenu_ItemVoiceLanguage, PauseMenu_ItemTextureFiltering, PauseMenu_ItemScreenPercent,
+                  PauseMenu_ItemAntiAliasing, PauseMenu_ItemRewooledDone, MENU_END);
+
     Menu_AddItems(bindPage, PauseMenu_ItemBindUp, PauseMenu_ItemBindRight, PauseMenu_ItemBindDown,
                   PauseMenu_ItemBindLeft, PauseMenu_ItemBindAction, PauseMenu_ItemBindJump,
                   PauseMenu_ItemBindWolfEyeView, PauseMenu_ItemBindRun, PauseMenu_ItemBindQuickInventory,
@@ -769,6 +816,7 @@ static void PauseMenu_PageRewooledSettings(u8 msg, MenuPage *item)
             g_meshOutlinesEnabled = g_pauseMeshOutlines;
             g_pauseTextLanguage = LangPack_ChosenText();
             g_pauseVoiceLanguage = LangPack_ChosenVoices();
+            g_textureFilteringEnabled = g_pauseTextureFiltering;
             break;
         case MENU_MSG_DRAW:
             Menu_Printf(item, TEXTALIGN_CENTER, "%s", PauseMenu_RewooledText(RWMENU_REWOOLED_SETTINGS));
@@ -982,6 +1030,66 @@ static void PauseMenu_ItemTextLanguage(u8 msg, MenuPage *item)
     }
 }
 
+/* Preview texture filtering (Yes = the game's bilinear filtering, No = sharp, pixelated textures). */
+static void PauseMenu_ItemTextureFiltering(u8 msg, MenuPage *item)
+{
+    switch (msg) {
+        case MENU_MSG_DRAW_SELECTED:
+            Menu_BuildNavFooter();
+            break;
+        case MENU_MSG_DRAW:
+            Menu_Printf(item, TEXTALIGN_LEFT, "Texture Filtering");
+            Menu_Printf(item, TEXTALIGN_RIGHT, g_onOffNames[g_textureFilteringEnabled]);
+            break;
+        case MENU_MSG_VALUE_CHANGED:
+            g_textureFilteringEnabled ^= 1;
+            Ui_PlayMoveSound();
+            break;
+    }
+}
+
+/* Screen percent: the share of the window's size the game renders at. The picture is scaled up to the window afterwards,
+ * with nearest-neighbour below 100, so the pixels stay sharp. It applies as soon as it is changed, and is saved. */
+static const int g_screenPercentSteps[] = {25, 33, 50, 67, 75, 100, 125, 150, 200};
+
+static void PauseMenu_ItemScreenPercent(u8 msg, MenuPage *item)
+{
+    const int count = (int)(sizeof(g_screenPercentSteps) / sizeof(g_screenPercentSteps[0]));
+    int index = 0, best = 100000, i;
+    char text[8];
+
+    /* the step nearest the current value: the launcher takes any value from 25 to 200 */
+    for (i = 0; i < count; i++) {
+        int d = g_options.renderScale - g_screenPercentSteps[i];
+        if (d < 0)
+            d = -d;
+        if (d < best) {
+            best = d;
+            index = i;
+        }
+    }
+    switch (msg) {
+        case MENU_MSG_DRAW_SELECTED:
+            Menu_BuildNavFooter();
+            break;
+        case MENU_MSG_DRAW:
+            snprintf(text, sizeof(text), "%d", g_options.renderScale); /* no "%": the game font draws it as another symbol */
+            Menu_Printf(item, TEXTALIGN_LEFT, "Screen Percent");
+            Menu_Printf(item, TEXTALIGN_RIGHT, "%s", text);
+            break;
+        case MENU_MSG_LEFT:
+            g_options.renderScale = g_screenPercentSteps[(index + count - 1) % count];
+            break;
+        case MENU_MSG_RIGHT:
+            g_options.renderScale = g_screenPercentSteps[(index + 1) % count];
+            break;
+        case MENU_MSG_VALUE_CHANGED:
+            PauseMenu_SaveRenderSettings();
+            Ui_PlayMoveSound();
+            break;
+    }
+}
+
 /* the voice language after `from` in direction dir: -1 (the text language's own voices), then every language that
  * has voices */
 static s32 PauseMenu_StepVoiceLanguage(s32 from, s32 dir)
@@ -1019,6 +1127,47 @@ static void PauseMenu_ItemVoiceLanguage(u8 msg, MenuPage *item)
             g_pauseVoiceLanguage = PauseMenu_StepVoiceLanguage(g_pauseVoiceLanguage, 1);
             break;
         case MENU_MSG_VALUE_CHANGED:
+            Ui_PlayMoveSound();
+            break;
+    }
+}
+
+/* Anti-aliasing: multisampling. It applies as soon as it is changed, and is saved. A count the graphics card does not
+ * support is replaced by the best one below it, and the row then shows the count that runs. */
+static void PauseMenu_ItemAntiAliasing(u8 msg, MenuPage *item)
+{
+    static const int values[] = {0, 2, 4, 8};
+    static const char *const names[] = {"Off", "MSAA 2x", "MSAA 4x", "MSAA 8x"};
+    int index = 0, i;
+
+    for (i = 0; i < 4; i++)
+        if (g_options.msaa >= values[i])
+            index = i;
+    switch (msg) {
+        case MENU_MSG_DRAW_SELECTED:
+            Menu_BuildNavFooter();
+            break;
+        case MENU_MSG_DRAW:
+            Menu_Printf(item, TEXTALIGN_LEFT, "Anti-Aliasing");
+            if (PauseMenu_MsaaSupported(values[index])) {
+                Menu_Printf(item, TEXTALIGN_RIGHT, "%s", names[index]);
+            } else {
+                /* this graphics API cannot do it: greyed out, as the menu's disabled rows are, with "Unsupported" before
+                 * it. It can still be selected; Done turns it into the best supported choice. */
+                u32 savedColor = g_pCurFont->color;
+                g_pCurFont->color = 0xa0a0a0;
+                Menu_Printf(item, TEXTALIGN_RIGHT, "Unsupported %s", names[index]);
+                g_pCurFont->color = savedColor;
+            }
+            break;
+        case MENU_MSG_LEFT:
+            g_options.msaa = values[(index + 3) % 4];
+            break;
+        case MENU_MSG_RIGHT:
+            g_options.msaa = values[(index + 1) % 4];
+            break;
+        case MENU_MSG_VALUE_CHANGED:
+            PauseMenu_SaveRenderSettings();
             Ui_PlayMoveSound();
             break;
     }
@@ -1062,12 +1211,18 @@ static void PauseMenu_ItemRewooledDone(u8 msg, MenuPage *item)
             LangPack_ChooseVoices(g_pauseVoiceLanguage);
             if (textChanged && g_pauseTextLanguage != LangPack_ActiveText())
                 Menu_ShowMessageBox(PauseMenu_RewooledText(RWMENU_TEXT_LANGUAGE_SAVED), TEXTALIGN_CENTER, 2500);
+            g_pauseTextureFiltering = g_textureFilteringEnabled;
             SaveKey *key = Save_OpenKey("CfgGame");
             if (key) {
                 Save_SetValue(key, "CelShadingOutlines", 3 /* REG_BINARY */,
                               &g_pauseMeshOutlines, sizeof(g_pauseMeshOutlines));
+                Save_SetValue(key, "TextureFiltering", 3 /* REG_BINARY */,
+                              &g_pauseTextureFiltering, sizeof(g_pauseTextureFiltering));
                 Save_CloseKey(key);
             }
+            /* an unsupported anti-aliasing choice (greyed out in its row) becomes the best supported one */
+            g_options.msaa = PauseMenu_SupportedMsaa(g_options.msaa);
+            PauseMenu_SaveRenderSettings();
             Menu_GoBack();
             g_pauseSlidersShown = 1;
             break;

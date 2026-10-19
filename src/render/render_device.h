@@ -176,6 +176,10 @@ public:
 extern RenderBackend *g_renderBackend;
 extern RenderDevice *g_renderDevice;
 
+/* Rewooled option: 1 = the game's own bilinear texture filtering, 0 = nearest-neighbour (sharp, pixelated textures).
+ * Defined in render_select.cpp; set by the pause menu's "Texture Filtering" item and read by the backend per draw. */
+extern u8 g_textureFilteringEnabled;
+
 enum RendererKind {
     RENDERER_VULKAN = 0, /* src/render/sdl3/, SDL_GPU's Vulkan driver */
     RENDERER_D3D12,      /* src/render/sdl3/, SDL_GPU's Direct3D 12 driver */

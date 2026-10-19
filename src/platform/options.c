@@ -15,6 +15,8 @@ void Options_SetDefaults(GameOptions *o)
     memset(o, 0, sizeof(*o));
     o->width = 1920;
     o->height = 1080;
+    o->renderScale = 100;
+    o->msaa = 0;
     o->fullscreen = 0;
     o->controller = OPTIONS_CONTROLLER_KEYBOARD;
     o->startLevel = -1;
@@ -46,6 +48,8 @@ void Options_LoadSaved(GameOptions *o)
     Options_ReadString(key, "Renderer", o->renderer, sizeof(o->renderer));
     Options_ReadInt(key, "Width", &o->width);
     Options_ReadInt(key, "Height", &o->height);
+    Options_ReadInt(key, "RenderScale", &o->renderScale);
+    Options_ReadInt(key, "Msaa", &o->msaa);
     Options_ReadInt(key, "Fullscreen", &o->fullscreen);
     Options_ReadInt(key, "Controller", &o->controller);
     Options_ReadInt(key, "StartLevel", &o->startLevel);
@@ -74,11 +78,23 @@ void Options_Save(const GameOptions *o)
     Options_WriteString(key, "Renderer", o->renderer);
     Options_WriteInt(key, "Width", o->width);
     Options_WriteInt(key, "Height", o->height);
+    Options_WriteInt(key, "RenderScale", o->renderScale);
+    Options_WriteInt(key, "Msaa", o->msaa);
     Options_WriteInt(key, "Fullscreen", o->fullscreen);
     Options_WriteInt(key, "Controller", o->controller);
     Options_WriteInt(key, "StartLevel", o->startLevel);
     Options_WriteString(key, "GameDir", o->exeDir);
     Options_WriteInt(key, "CheckUpdates", o->checkUpdates);
+    Save_CloseKey(key);
+}
+
+void Options_SaveRenderSettings(int renderScale, int msaa)
+{
+    SaveKey *key = Save_OpenKey("");
+    if (!key)
+        return;
+    Options_WriteInt(key, "RenderScale", renderScale);
+    Options_WriteInt(key, "Msaa", msaa);
     Save_CloseKey(key);
 }
 
@@ -128,6 +144,10 @@ void Options_ParseArgs(GameOptions *o, int argc, char **argv)
             o->width = atoi(v);
         } else if ((v = Options_Value(a, "height")) != 0 && atoi(v) > 0) {
             o->height = atoi(v);
+        } else if ((v = Options_Value(a, "scale")) != 0 && atoi(v) > 0) {
+            o->renderScale = atoi(v);
+        } else if ((v = Options_Value(a, "msaa")) != 0) {
+            o->msaa = atoi(v);
         } else if (Options_Flag(a, "fullscreen")) {
             o->fullscreen = 1;
         } else if (Options_Flag(a, "windowed")) {
@@ -149,6 +169,10 @@ int Options_ToArgs(const GameOptions *o, char buf[][OPTIONS_ARG_SIZE], int max)
         snprintf(buf[n++], OPTIONS_ARG_SIZE, "--width=%d", o->width);
     if (n < max)
         snprintf(buf[n++], OPTIONS_ARG_SIZE, "--height=%d", o->height);
+    if (n < max)
+        snprintf(buf[n++], OPTIONS_ARG_SIZE, "--scale=%d", o->renderScale);
+    if (n < max)
+        snprintf(buf[n++], OPTIONS_ARG_SIZE, "--msaa=%d", o->msaa);
     if (n < max)
         snprintf(buf[n++], OPTIONS_ARG_SIZE, "%s", o->fullscreen ? "--fullscreen" : "--windowed");
     if (n < max) {

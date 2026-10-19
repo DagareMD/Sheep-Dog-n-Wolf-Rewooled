@@ -20,9 +20,71 @@
 long D3DApp_StartWithoutDirectDraw(D3DApp *app, u32 width, u32 height);
 
 #define SDL3_E_FAIL ((long)0x80004005L)
-/* the render size: the options' (--width / --height, src/platform/options.h), 1920 x 1080 by default */
-#define SDL3_RENDER_WIDTH (g_options.width > 0 ? g_options.width : 1920)
-#define SDL3_RENDER_HEIGHT (g_options.height > 0 ? g_options.height : 1080)
+/* the window size: the options' (--width / --height, src/platform/options.h), 1920 x 1080 by default */
+#define SDL3_WINDOW_WIDTH (g_options.width > 0 ? g_options.width : 1920)
+#define SDL3_WINDOW_HEIGHT (g_options.height > 0 ? g_options.height : 1080)
+
+/* Screen percent (g_options.renderScale: --scale, the launcher or the in-game row; 25..200, 100 when unset): the GPU
+ * frame is this share of the window's size, and is scaled up (or down) to the window when it is presented */
+static int Sdl3_RenderScale()
+{
+    int percent = g_options.renderScale;
+    if (percent <= 0)
+        return 100;
+    return percent < 25 ? 25 : (percent > 200 ? 200 : percent);
+}
+
+/* the size of the GPU frame: the window's (the size the game believes it renders at) times the screen percent */
+static u32 Sdl3_ScaledSize(u32 size)
+{
+    u32 scaled = (u32)((unsigned long long)size * (unsigned)Sdl3_RenderScale() / 100u);
+    return scaled ? scaled : 1;
+}
+
+/* Anti-aliasing (--msaa): the largest sample count up to wanted that the GPU supports for both the colour and the
+ * depth format the renderer uses; 1 (off) when wanted is 0 or 1 or none is supported */
+/* The sample counts the GPU can use for both the colour and the depth format the renderer draws with, as bits: 1 = 2x,
+ * 2 = 4x, 4 = 8x. Set when the targets are made. The pause menu reads it, so that its anti-aliasing row can show a choice
+ * this graphics API cannot do (Metal has no 8x, say) greyed out as unsupported. */
+u8 g_msaaSupportMask = 0;
+
+static u8 Sdl3_SampleCountMask(SDL_GPUDevice *gpu)
+{
+    static const SDL_GPUSampleCount counts[3] = {SDL_GPU_SAMPLECOUNT_2, SDL_GPU_SAMPLECOUNT_4, SDL_GPU_SAMPLECOUNT_8};
+    u8 mask = 0;
+    int i;
+    for (i = 0; i < 3; i++)
+        if (SDL_GPUTextureSupportsSampleCount(gpu, SDL_GPU_TEXTUREFORMAT_R8G8B8A8_UNORM, counts[i]) &&
+            SDL_GPUTextureSupportsSampleCount(gpu, SDL_GPU_TEXTUREFORMAT_D16_UNORM, counts[i]))
+            mask |= (u8)(1 << i);
+    return mask;
+}
+
+/* the largest supported count up to wanted (mask as above); 1, no anti-aliasing, when wanted is below 2 or none fits */
+static SDL_GPUSampleCount Sdl3_BestSampleCount(u8 mask, int wanted)
+{
+    static const struct {
+        int n;
+        u8 bit;
+        SDL_GPUSampleCount count;
+    } steps[] = {{8, 4, SDL_GPU_SAMPLECOUNT_8}, {4, 2, SDL_GPU_SAMPLECOUNT_4}, {2, 1, SDL_GPU_SAMPLECOUNT_2}};
+    int i;
+    for (i = 0; i < 3; i++)
+        if (steps[i].n <= wanted && (mask & steps[i].bit))
+            return steps[i].count;
+    return SDL_GPU_SAMPLECOUNT_1;
+}
+
+static SDL_GPUSampleCount Sdl3_PickSampleCount(SDL_GPUDevice *gpu, int wanted)
+{
+    SDL_GPUSampleCount count;
+    g_msaaSupportMask = Sdl3_SampleCountMask(gpu);
+    count = Sdl3_BestSampleCount(g_msaaSupportMask, wanted);
+    if (wanted >= 2 && (count == SDL_GPU_SAMPLECOUNT_1 ? 0 : 1 << (int)count) != wanted)
+        SDL_Log("SheepD3D: MSAA %dx is not supported here, using %s", wanted,
+                count == SDL_GPU_SAMPLECOUNT_1 ? "none" : (count == SDL_GPU_SAMPLECOUNT_2 ? "2x" : (count == SDL_GPU_SAMPLECOUNT_4 ? "4x" : "8x")));
+    return count;
+}
 
 /* Direct3D 7 values the backend interprets (render_device.h passes the game's) */
 enum {
@@ -337,6 +399,9 @@ public:
 private:
     SDL_GPUCommandBuffer *Commands();
     void Flush();
+    int CreateTargets();
+    void ReleaseTargets();
+    void ApplyRenderSettings();
     void BeginBatch() { batch++; }
     SDL_GPUGraphicsPipeline *Pipeline(u32 key);
     void MarkUsed(Sdl3Texture *t) { t->drawnInBatch = batch; }
@@ -353,7 +418,9 @@ private:
 
     SDL_GPUDevice *gpu;
     SDL_Window *window;
-    u32 width, height;
+    u32 width, height;           /* the size the game believes it renders at: the window's */
+    u32 gpuWidth, gpuHeight;     /* the size of the frames: that times the screen percent */
+    int appliedScale, appliedMsaa; /* the screen percent and sample count the targets were made with */
     char name[64];
 
     SDL_GPUShader *vertexShader, *pixelShader;
@@ -363,6 +430,8 @@ private:
     SDL_GPUTexture *frames[2];
     int current;
     SDL_GPUTexture *depth;
+    SDL_GPUSampleCount sampleCount; /* 1 = no anti-aliasing */
+    SDL_GPUTexture *msaaFrames[2];  /* the multisampled frames, resolved into frames[] (when sampleCount > 1) */
     Sdl3Texture white; /* bound when the game has no texture set */
     Sdl3Texture font;  /* the performance overlay's glyphs, made the first time it is shown */
 
@@ -405,6 +474,12 @@ Sdl3RenderDevice::Sdl3RenderDevice(SDL_GPUDevice *gpu, SDL_Window *window, u32 w
     frames[0] = frames[1] = 0;
     current = 0;
     depth = 0;
+    sampleCount = SDL_GPU_SAMPLECOUNT_1;
+    msaaFrames[0] = msaaFrames[1] = 0;
+    gpuWidth = width;
+    gpuHeight = height;
+    appliedScale = 100;
+    appliedMsaa = 0;
     SDL_zero(white);
     SDL_zero(font);
     commands = 0;
@@ -445,7 +520,6 @@ int Sdl3RenderDevice::Init()
     SDL_GPUShaderCreateInfo vs, ps;
     SDL_GPUSamplerCreateInfo sampler;
     SDL_GPUTextureCreateInfo tex;
-    int i;
 
     SDL_zero(vs);
     SDL_zero(ps);
@@ -492,25 +566,12 @@ int Sdl3RenderDevice::Init()
     if (!pointSampler || !linearSampler)
         return 0;
 
-    /* the frames: RGBA8 (the original's were 16-bit), a sampler source for the scaled blit into the window */
+    if (!CreateTargets())
+        return 0;
     SDL_zero(tex);
     tex.type = SDL_GPU_TEXTURETYPE_2D;
-    tex.format = SDL_GPU_TEXTUREFORMAT_R8G8B8A8_UNORM;
-    tex.usage = SDL_GPU_TEXTUREUSAGE_COLOR_TARGET | SDL_GPU_TEXTUREUSAGE_SAMPLER;
-    tex.width = width;
-    tex.height = height;
     tex.layer_count_or_depth = 1;
     tex.num_levels = 1;
-    for (i = 0; i < 2; i++)
-        if (!(frames[i] = SDL_CreateGPUTexture(gpu, &tex)))
-            return 0;
-    /* 16-bit, as the original's (the first z buffer format the driver lists), so that surfaces drawn over each other
-     * at nearly the same depth resolve as they did */
-    depthFormat = SDL_GPU_TEXTUREFORMAT_D16_UNORM;
-    tex.format = depthFormat;
-    tex.usage = SDL_GPU_TEXTUREUSAGE_DEPTH_STENCIL_TARGET;
-    if (!(depth = SDL_CreateGPUTexture(gpu, &tex)))
-        return 0;
 
     /* a white texel (4444: 0xffff), bound when there is no texture: MODULATE then gives the diffuse colour */
     white.width = white.height = 1;
@@ -536,6 +597,116 @@ int Sdl3RenderDevice::Init()
     return 1;
 }
 
+void Sdl3RenderDevice::ReleaseTargets()
+{
+    int i;
+    for (i = 0; i < 2; i++) {
+        if (frames[i])
+            SDL_ReleaseGPUTexture(gpu, frames[i]);
+        frames[i] = 0;
+        if (msaaFrames[i])
+            SDL_ReleaseGPUTexture(gpu, msaaFrames[i]);
+        msaaFrames[i] = 0;
+    }
+    if (depth)
+        SDL_ReleaseGPUTexture(gpu, depth);
+    depth = 0;
+}
+
+/* The frames, the depth buffer and (with anti-aliasing) the multisampled frames, at the screen percent and sample count
+ * the options name now. The game keeps drawing at the window's size (width x height): its vertices are turned into clip
+ * space with that size, so a smaller GPU frame just rasterizes the same picture with fewer pixels. */
+int Sdl3RenderDevice::CreateTargets()
+{
+    SDL_GPUTextureCreateInfo tex;
+    int i;
+
+    appliedScale = Sdl3_RenderScale();
+    gpuWidth = Sdl3_ScaledSize(width);
+    gpuHeight = Sdl3_ScaledSize(height);
+    sampleCount = Sdl3_PickSampleCount(gpu, g_options.msaa);
+    /* g_options.msaa stays what was asked for: the menu shows a choice this GPU cannot do as unsupported, and what runs is
+     * the best supported sample count up to it */
+    appliedMsaa = g_options.msaa < 2 ? 0 : g_options.msaa;
+
+    /* the frames: RGBA8 (the original's were 16-bit), a sampler source for the scaled blit into the window */
+    SDL_zero(tex);
+    tex.type = SDL_GPU_TEXTURETYPE_2D;
+    tex.format = SDL_GPU_TEXTUREFORMAT_R8G8B8A8_UNORM;
+    tex.usage = SDL_GPU_TEXTUREUSAGE_COLOR_TARGET | SDL_GPU_TEXTUREUSAGE_SAMPLER;
+    tex.width = gpuWidth;
+    tex.height = gpuHeight;
+    tex.layer_count_or_depth = 1;
+    tex.num_levels = 1;
+    for (i = 0; i < 2; i++)
+        if (!(frames[i] = SDL_CreateGPUTexture(gpu, &tex))) {
+            ReleaseTargets();
+            return 0;
+        }
+    /* 16-bit, as the original's (the first z buffer format the driver lists), so that surfaces drawn over each other
+     * at nearly the same depth resolve as they did */
+    depthFormat = SDL_GPU_TEXTUREFORMAT_D16_UNORM;
+    tex.format = depthFormat;
+    tex.usage = SDL_GPU_TEXTUREUSAGE_DEPTH_STENCIL_TARGET;
+    tex.sample_count = sampleCount; /* the depth buffer must match the colour target's sample count */
+    if (!(depth = SDL_CreateGPUTexture(gpu, &tex))) {
+        ReleaseTargets();
+        return 0;
+    }
+    if (sampleCount != SDL_GPU_SAMPLECOUNT_1) {
+        /* the multisampled colour frames: one per frame, as frames[] are, each resolved into its frames[] texture */
+        tex.format = SDL_GPU_TEXTUREFORMAT_R8G8B8A8_UNORM;
+        tex.usage = SDL_GPU_TEXTUREUSAGE_COLOR_TARGET;
+        for (i = 0; i < 2; i++)
+            if (!(msaaFrames[i] = SDL_CreateGPUTexture(gpu, &tex))) {
+                ReleaseTargets();
+                return 0;
+            }
+    }
+    SDL_Log("SheepD3D: window %ux%u, rendering at %ux%u (%d%%), MSAA %dx", (unsigned)width, (unsigned)height,
+            (unsigned)gpuWidth, (unsigned)gpuHeight, appliedScale, sampleCount == SDL_GPU_SAMPLECOUNT_1 ? 0 : 1 << (int)sampleCount);
+    return 1;
+}
+
+/* Called at the end of every Present, when no frame is half drawn: if the screen percent or the anti-aliasing changed
+ * (the in-game rows), makes the targets again and clears both frames black, as the first Clear of Init does. The
+ * pipelines are made again too: the sample count is part of them. */
+void Sdl3RenderDevice::ApplyRenderSettings()
+{
+    int wantedMsaa = g_options.msaa < 2 ? 0 : g_options.msaa;
+    int previousScale = appliedScale, previousMsaa = appliedMsaa;
+    int i;
+
+    if (Sdl3_RenderScale() == appliedScale && wantedMsaa == appliedMsaa)
+        return;
+    /* a choice that runs as the sample count already running (an unsupported one, replaced by a supported one) needs no new targets */
+    if (Sdl3_RenderScale() == appliedScale && Sdl3_BestSampleCount(g_msaaSupportMask, wantedMsaa) == sampleCount) {
+        appliedMsaa = wantedMsaa;
+        return;
+    }
+    SDL_WaitForGPUIdle(gpu);
+    ReleaseTargets();
+    for (i = 0; i < PK_COUNT; i++) {
+        if (pipelines[i])
+            SDL_ReleaseGPUGraphicsPipeline(gpu, pipelines[i]);
+        pipelines[i] = 0;
+    }
+    if (!CreateTargets()) {
+        /* e.g. out of video memory: go back to what worked */
+        SDL_Log("SheepD3D: the new render settings failed (%s), going back", SDL_GetError());
+        g_options.renderScale = previousScale;
+        g_options.msaa = previousMsaa;
+        if (!CreateTargets())
+            SDL_Log("SheepD3D: the previous render settings failed too (%s)", SDL_GetError());
+    }
+    clearColor = clearDepth = 1;
+    Flush();
+    current ^= 1;
+    clearColor = clearDepth = 1;
+    Flush();
+    current ^= 1;
+}
+
 Sdl3RenderDevice::~Sdl3RenderDevice()
 {
     int i;
@@ -556,6 +727,9 @@ Sdl3RenderDevice::~Sdl3RenderDevice()
     for (i = 0; i < 2; i++)
         if (frames[i])
             SDL_ReleaseGPUTexture(gpu, frames[i]);
+    for (i = 0; i < 2; i++)
+        if (msaaFrames[i])
+            SDL_ReleaseGPUTexture(gpu, msaaFrames[i]);
     if (depth)
         SDL_ReleaseGPUTexture(gpu, depth);
     if (white.gpu)
@@ -895,6 +1069,7 @@ SDL_GPUGraphicsPipeline *Sdl3RenderDevice::Pipeline(u32 key)
     info.depth_stencil_state.compare_op = SDL_GPU_COMPAREOP_LESS_OR_EQUAL; /* D3DCMP_LESSEQUAL, the default */
     info.depth_stencil_state.enable_depth_test = (key & PK_ZTEST) != 0;
     info.depth_stencil_state.enable_depth_write = (key & PK_ZWRITE) != 0;
+    info.multisample_state.sample_count = sampleCount;
     target.format = SDL_GPU_TEXTUREFORMAT_R8G8B8A8_UNORM;
     /* the frame's alpha stays 1, as the original's 16-bit back buffer had none (DESTALPHA is then 1) */
     target.blend_state.enable_color_write_mask = true;
@@ -1020,10 +1195,18 @@ void Sdl3RenderDevice::Flush()
         const Sdl3PsParams *boundPs = 0;
 
         SDL_zero(color);
-        color.texture = frames[current];
         color.load_op = clearColor ? SDL_GPU_LOADOP_CLEAR : SDL_GPU_LOADOP_LOAD;
         color.clear_color = clearColorValue;
-        color.store_op = SDL_GPU_STOREOP_STORE;
+        if (sampleCount != SDL_GPU_SAMPLECOUNT_1) {
+            /* draw into the multisampled frame, and resolve into the frame at the end of every pass (a frame
+             * capture or the presented picture can follow any pass), keeping the samples for the next one */
+            color.texture = msaaFrames[current];
+            color.resolve_texture = frames[current];
+            color.store_op = SDL_GPU_STOREOP_RESOLVE_AND_STORE;
+        } else {
+            color.texture = frames[current];
+            color.store_op = SDL_GPU_STOREOP_STORE;
+        }
         SDL_zero(depthTarget);
         depthTarget.texture = depth;
         depthTarget.load_op = clearDepth ? SDL_GPU_LOADOP_CLEAR : SDL_GPU_LOADOP_LOAD;
@@ -1053,7 +1236,7 @@ void Sdl3RenderDevice::Flush()
             if (d->texture != boundTexture || d->linear != boundLinear) {
                 SDL_GPUTextureSamplerBinding sampler;
                 sampler.texture = d->texture->gpu;
-                sampler.sampler = d->linear ? linearSampler : pointSampler;
+                sampler.sampler = (d->linear && g_textureFilteringEnabled) ? linearSampler : pointSampler;
                 SDL_BindGPUFragmentSamplers(pass, 0, &sampler, 1);
                 boundTexture = d->texture;
                 boundLinear = d->linear;
@@ -1163,8 +1346,8 @@ long Sdl3RenderDevice::Present()
             }
             SDL_zero(blit);
             blit.source.texture = frames[current];
-            blit.source.w = width;
-            blit.source.h = height;
+            blit.source.w = gpuWidth;
+            blit.source.h = gpuHeight;
             blit.destination.texture = swapchain;
             blit.destination.x = (swapWidth - w) / 2;
             blit.destination.y = (swapHeight - h) / 2;
@@ -1172,7 +1355,8 @@ long Sdl3RenderDevice::Present()
             blit.destination.h = h;
             blit.load_op = SDL_GPU_LOADOP_CLEAR; /* black bars */
             blit.clear_color.a = 1.0f;
-            blit.filter = SDL_GPU_FILTER_LINEAR;
+            /* rendered below the window's size (screen percent < 100): nearest, so the pixels stay sharp */
+            blit.filter = appliedScale < 100 ? SDL_GPU_FILTER_NEAREST : SDL_GPU_FILTER_LINEAR;
             SDL_BlitGPUTexture(cmd, &blit);
         }
     } else if (!s_swapchainWarning++) {
@@ -1184,6 +1368,7 @@ long Sdl3RenderDevice::Present()
     commands = 0;
     current ^= 1;
     PerfOverlay_PresentEnd();
+    ApplyRenderSettings();
     return 0;
 }
 
@@ -1406,7 +1591,7 @@ long Sdl3RenderDevice::CreateFrameCaptureTexture(u32 w, u32 h, RdTexture **out, 
     SDL_zero(info);
     info.type = SDL_GPU_TEXTURETYPE_2D;
     info.format = SDL_GPU_TEXTUREFORMAT_R8G8B8A8_UNORM; /* the frames' format, for the copy */
-    info.usage = SDL_GPU_TEXTUREUSAGE_SAMPLER;
+    info.usage = SDL_GPU_TEXTUREUSAGE_SAMPLER | SDL_GPU_TEXTUREUSAGE_COLOR_TARGET; /* colour target: the blit below */
     info.width = w;
     info.height = h;
     info.layer_count_or_depth = 1;
@@ -1443,6 +1628,24 @@ long Sdl3RenderDevice::CopyFrameToTexture(RdTexture *dstTexture, RdRect *dstRect
     to.texture = dst->gpu;
     to.x = (u32)dstRect->left;
     to.y = (u32)dstRect->top;
+    if (gpuWidth != width || gpuHeight != height) {
+        /* the frame is smaller (or larger) than the window's size the capture is made for (screen percent): stretch it
+         * into the capture's rectangle */
+        SDL_GPUBlitInfo blit;
+        SDL_zero(blit);
+        blit.source.texture = from.texture;
+        blit.source.w = gpuWidth;
+        blit.source.h = gpuHeight;
+        blit.destination.texture = dst->gpu;
+        blit.destination.x = to.x;
+        blit.destination.y = to.y;
+        blit.destination.w = w;
+        blit.destination.h = h;
+        blit.load_op = SDL_GPU_LOADOP_LOAD;
+        blit.filter = appliedScale < 100 ? SDL_GPU_FILTER_NEAREST : SDL_GPU_FILTER_LINEAR;
+        SDL_BlitGPUTexture(cmd, &blit);
+        return 0;
+    }
     copy = SDL_BeginGPUCopyPass(cmd);
     SDL_CopyGPUTextureToTexture(copy, &from, &to, w, h, 1, false);
     SDL_EndGPUCopyPass(copy);
@@ -1492,8 +1695,8 @@ public:
     }
     void WindowSize(int *width, int *height) const
     {
-        *width = SDL3_RENDER_WIDTH;
-        *height = SDL3_RENDER_HEIGHT;
+        *width = SDL3_WINDOW_WIDTH;
+        *height = SDL3_WINDOW_HEIGHT;
     }
 
     RenderDevice *CreateDevice(D3DApp *app, long *result)
@@ -1501,7 +1704,7 @@ public:
         SDL_GPUDevice *gpu;
         SDL_Window *window = Platform_Window();
         Sdl3RenderDevice *device;
-        const u32 width = SDL3_RENDER_WIDTH, height = SDL3_RENDER_HEIGHT;
+        const u32 width = (u32)SDL3_WINDOW_WIDTH, height = (u32)SDL3_WINDOW_HEIGHT;
 
         *result = SDL3_E_FAIL;
         if (!window || !Sdl3_InitVideo())
