@@ -272,7 +272,8 @@ enum {
     PK_DST_SHIFT = 6, /* 4 bits */
     PK_ZTEST = 1 << 10,
     PK_ZWRITE = 1 << 11,
-    PK_COUNT = 1 << 12,
+    PK_SUBTRACT = 1 << 12, /* the colour is subtracted: destination - source (RSF_BLEND_SUB) */
+    PK_COUNT = 1 << 13,
 };
 
 struct Sdl3PsParams {
@@ -291,6 +292,7 @@ struct Sdl3Draw {
 /* the Direct3D 7 state the game changes */
 struct Sdl3State {
     int blend;
+    int subtract; /* with blend: destination - source, not source + destination */
     u32 srcBlend, dstBlend;
     int alphaTest, zEnable, zWrite, specular, fog, linear;
     u32 cull;
@@ -794,6 +796,12 @@ void Sdl3RenderDevice::SetStateFlags(u32 flags)
         state.srcBlend = D3D_BLEND_INVSRCALPHA;
         state.dstBlend = D3D_BLEND_ONE;
     }
+    if (flags & RSF_BLEND_SUB) {
+        state.blend = 1;
+        state.srcBlend = D3D_BLEND_ONE;
+        state.dstBlend = D3D_BLEND_ONE;
+        state.subtract = 1;
+    }
     if (flags & RSF_ALPHATEST)
         state.alphaTest = 1;
     if (flags & RSF_SPECULAR)
@@ -821,6 +829,8 @@ void Sdl3RenderDevice::ClearStateFlags(u32 flags)
 {
     if ((flags & RSF_BLEND_ALPHA) || (flags & RSF_BLEND_ADD))
         state.blend = 0;
+    if (flags & RSF_BLEND_SUB)
+        state.blend = state.subtract = 0;
     if (flags & RSF_ALPHATEST)
         state.alphaTest = 0;
     if (flags & RSF_SPECULAR)
@@ -959,6 +969,8 @@ long Sdl3RenderDevice::DrawPrimitive(u32 primitive, u32 fvf, void *data, u32 cou
     key = (lines ? PK_LINES : 0) | (state.zEnable ? PK_ZTEST : 0) | (state.zEnable && state.zWrite ? PK_ZWRITE : 0);
     if (state.blend)
         key |= PK_BLEND | ((state.srcBlend & 15) << PK_SRC_SHIFT) | ((state.dstBlend & 15) << PK_DST_SHIFT);
+    if (state.blend && state.subtract)
+        key |= PK_SUBTRACT;
     texture = state.texture ? state.texture : &white;
     SDL_zero(ps);
     ps.fogColor[0] = ((state.fogColor >> 16) & 0xff) / 255.0f;
@@ -1081,6 +1093,8 @@ SDL_GPUGraphicsPipeline *Sdl3RenderDevice::Pipeline(u32 key)
         target.blend_state.src_color_blendfactor = target.blend_state.src_alpha_blendfactor = src;
         target.blend_state.dst_color_blendfactor = target.blend_state.dst_alpha_blendfactor = dst;
         target.blend_state.color_blend_op = target.blend_state.alpha_blend_op = SDL_GPU_BLENDOP_ADD;
+        if (key & PK_SUBTRACT) /* destination * 1 - source * 1, clamped at 0 */
+            target.blend_state.color_blend_op = SDL_GPU_BLENDOP_REVERSE_SUBTRACT;
     }
     info.target_info.color_target_descriptions = &target;
     info.target_info.num_color_targets = 1;
