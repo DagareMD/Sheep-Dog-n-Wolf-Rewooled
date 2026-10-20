@@ -255,6 +255,8 @@ void Main_Loop(D3DApp *app)
                 Level_ExitUpdate();
             g_pPolyBin->Render_EndFrame(1);
         }
+        /* Rewooled: the FPS Limit row (20..300) is the cap; the game's own, which this takes over from, was a fixed 60 */
+        g_maxFps = (u32)(g_options.fpsLimit <= 0 ? 300 : (g_options.fpsLimit < 20 ? 20 : (g_options.fpsLimit > 300 ? 300 : g_options.fpsLimit)));
         g_pPolyBin->Render_Present(g_maxFps);
     }
 }
