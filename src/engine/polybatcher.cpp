@@ -1129,10 +1129,13 @@ void PolyBatcher::Render_BeginFrame()
 }
 
 /* flush == 1 draws what is queued; anything else drops it. Ends the scene either way. */
+void Camera_DrawUnderwaterFilter(); /* camera.cpp: Rewooled */
+
 void PolyBatcher::Render_EndFrame(u8 flush)
 {
     if (flush == 1) {
         Flush();
+        Camera_DrawUnderwaterFilter(); /* over the finished frame */
     } else {
         lineBatchCount = 0;
         flatBatchCount = 0;
