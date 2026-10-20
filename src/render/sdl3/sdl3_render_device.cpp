@@ -1256,6 +1256,52 @@ void Sdl3RenderDevice::Flush()
     BeginBatch();
 }
 
+/* V-Sync (g_options.vsync). On, a frame waits for the display's refresh (the VSYNC present mode). Off, MAILBOX where the
+ * driver has it (the newest frame is shown at each refresh, with no tearing), else IMMEDIATE. Called after every frame;
+ * it acts only when the setting has changed. */
+static void Sdl3_UpdatePresentMode(SDL_GPUDevice *gpu, SDL_Window *window)
+{
+    static int applied = -1;
+    int vsync = g_options.vsync != 0;
+    SDL_GPUPresentMode mode = SDL_GPU_PRESENTMODE_VSYNC;
+
+    if (vsync == applied)
+        return;
+    applied = vsync;
+    if (!vsync) {
+        if (SDL_WindowSupportsGPUPresentMode(gpu, window, SDL_GPU_PRESENTMODE_MAILBOX))
+            mode = SDL_GPU_PRESENTMODE_MAILBOX;
+        else if (SDL_WindowSupportsGPUPresentMode(gpu, window, SDL_GPU_PRESENTMODE_IMMEDIATE))
+            mode = SDL_GPU_PRESENTMODE_IMMEDIATE;
+    }
+    if (SDL_SetGPUSwapchainParameters(gpu, window, SDL_GPU_SWAPCHAINCOMPOSITION_SDR, mode))
+        SDL_Log("SheepD3D: V-Sync %s (present mode %s)", vsync ? "on" : "off",
+                mode == SDL_GPU_PRESENTMODE_VSYNC ? "vsync" : (mode == SDL_GPU_PRESENTMODE_MAILBOX ? "mailbox" : "immediate"));
+    else
+        SDL_Log("SheepD3D: V-Sync %s: %s", vsync ? "on" : "off", SDL_GetError());
+}
+
+/* FPS Limit (g_options.fpsLimit, 20..300): waits out what is left of each frame's time. Called at the end of every
+ * Present. A frame that ran long is not made up for by short ones after it. */
+static void Sdl3_LimitFrameRate()
+{
+    static Uint64 next = 0;
+    int fps = g_options.fpsLimit;
+    Uint64 interval, now;
+
+    if (fps <= 0 || fps > 300)
+        fps = 300;
+    else if (fps < 20)
+        fps = 20;
+    interval = 1000000000ull / (Uint64)fps;
+    now = SDL_GetTicksNS();
+    if (!next || now > next + interval)
+        next = now; /* the first frame, or more than a frame late */
+    next += interval;
+    if (now < next)
+        SDL_DelayPrecise(next - now);
+}
+
 /* the frame into the window (scaled, aspect kept), submitted; then the other frame is drawn into (a flip) */
 long Sdl3RenderDevice::Present()
 {
@@ -1369,6 +1415,8 @@ long Sdl3RenderDevice::Present()
     current ^= 1;
     PerfOverlay_PresentEnd();
     ApplyRenderSettings();
+    Sdl3_UpdatePresentMode(gpu, window);
+    Sdl3_LimitFrameRate();
     return 0;
 }
 
