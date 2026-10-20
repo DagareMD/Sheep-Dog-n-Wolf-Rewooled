@@ -3123,18 +3123,30 @@ void Camera_InitUnderwaterOverlay()
         }
     }
 }
+
+/* The underwater filter, as the PlayStation's: a colour subtracted from the whole picture, so it darkens and takes the
+ * red and green out of it without lifting the darks or hiding the detail. Measured against a PlayStation frame of the
+ * same place: it takes about 42 off red, 28 off green and 40 off blue. To change it: the colour below, 0x00RRGGBB, is
+ * what is taken off each channel (0..255); a darker, stronger filter has bigger numbers. */
+#define UNDERWATER_SUBTRACT_COLOR 0x002a1c28u
+
+/* set while the camera is under water; Camera_DrawUnderwaterFilter, which the poly batcher calls once the rest of the
+ * frame is drawn, draws the filter and clears it */
+static s32 g_uwFilterActive = 0;
+
+void Camera_DrawUnderwaterFilter()
+{
+    if (!g_uwFilterActive)
+        return;
+    g_uwFilterActive = 0;
+    Draw2D_FlatRect_Immediate(g_screen.Draw2D_LayerToZ(g_screenLayerBase + 6), 0, 0, g_pViewFrustum->viewportWidth,
+                              g_pViewFrustum->viewportHeight, RSF_BLEND_SUB, UNDERWATER_SUBTRACT_COLOR);
+}
+
 void Camera_UpdateUnderwater()
 {
-    float depth;
     if (Camera_WaterZones(0)->FindContaining(&g_camera.pos)) {
-        Camera_InitUnderwaterOverlay();
-        if (g_uwOverlayReady == 1) {
-            depth = g_screen.Draw2D_LayerToZ(g_screenLayerBase + 6);
-            Draw2D_TexRect(depth, 0, 0, g_pViewFrustum->viewportWidth, g_pViewFrustum->viewportHeight,
-                           g_uwOverlayTexPage, g_uwOverlayUV[0], g_uwOverlayUV[1], g_uwOverlayColor, g_uwOverlayUV[0],
-                           g_uwOverlayUV[3], g_uwOverlayColor, g_uwOverlayUV[2], g_uwOverlayUV[1], g_uwOverlayColor,
-                           g_uwOverlayUV[2], g_uwOverlayUV[3], g_uwOverlayColor);
-        }
+        g_uwFilterActive = 1; /* Rewooled: drawn at the end of the frame, replacing the textured overlay of the original */
         if (!g_camUnderwaterSnd || !Sound_IsPlaying(g_camUnderwaterSnd))
             g_camUnderwaterSnd = Sound_Play(SND_UNDERWATER, &g_camera, 255, SNDF_LOOP | SNDF_NO_RETRIGGER, 4096);
     } else if (g_camUnderwaterSnd) {
