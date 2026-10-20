@@ -4246,6 +4246,7 @@ enum RenderStateFlags {
     RSF_TEXTURED = 0x04000,  // stage 0: TEXCOORDINDEX(0xb)=0, COLORARG1(2)=TEXTURE(2), COLORARG2(3)=DIFFUSE(0), COLOROP(1)=MODULATE(4). When clear, the set path instead writes COLORARG1=DIFFUSE, COLOROP=SELECTARG1(2) (untextured). The clear path writes COLOROP=DISABLE. Verified in; the first call is TEXCOORDINDEX, not ALPHAARG2 (stage state 6).
     RSF_FILTER_LINEAR = 0x08000,  // stage 0: MAGFILTER(0x10)=MINFILTER(0x11)=LINEAR(2); cleared to POINT(1). Verified in and; ADDRESSU/ADDRESSV (stage states 13/14) are never written.
     RSF_FOG = 0x10000,  // FOGENABLE=1
+    RSF_BLEND_SUB = 0x20000,  // Rewooled, not in the original: ALPHABLENDENABLE=1, the destination colour minus the source colour (BLENDOP=REVSUBTRACT, SRCBLEND=ONE, DESTBLEND=ONE): the PlayStation's subtractive semi-transparency, for the underwater filter
 };
 
 enum ResClass {
