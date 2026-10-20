@@ -10,6 +10,7 @@
  * */
 #include "sdw_enums.h"
 #include "wolf.h"
+extern s32 g_dtDither; /* time.cpp: Rewooled, rounds a frame-time step (see engine/approach.cpp) */
 
 /* climb-box direction (flags bits 27-30) -> heading / 0x200 */
 extern const u8 g_wolfClimbDirTable[] = {0, 2, 6, 0, 0, 1, 7, 0, 4, 3, 5, 0, 0, 0, 0, 0};
@@ -310,7 +311,7 @@ s32 Wolf::MoveTowardPoint(Vec3s *target, s16 facing, s32 useFacing)
     wantedDir = work.steerHeading;
     bounceSpeed = 0;
     work.maxSpeed = work.rec->maxSpeed;
-    work.frameStep = (s16)((work.maxSpeed * g_dt) / 4096);
+    work.frameStep = (s16)((work.maxSpeed * g_dt + 4095) >> 12); /* Rewooled: rounded up: a dithered step is this or one less */
     if (work.frameStep > work.distError) {
         work.s->vel.x = work.s->vel.y = work.s->vel.z = 0;
         Wolf_SurfaceVelocity(&work.s->vel, (flags & WOLF_FB_IN_SLIDE_ZONE) || (flags & WOLF_FB_FORCE_SLIDE),
@@ -1057,7 +1058,7 @@ s32 Wolf::LaunchArcStep()
     work.s->step.y = 0;
     work.s->step.z = 0;
     work.s->target.z = pos.z;
-    work.onPath = launchPath.Step(work.s, g_dtMs >> 2);
+    work.onPath = launchPath.Step(work.s, (g_dt * 250 + g_dtDither) >> 12);
     if (work.onPath) {
         work.s->step.x = work.s->target.x - pos.x;
         work.s->step.y = work.s->target.y - pos.y;

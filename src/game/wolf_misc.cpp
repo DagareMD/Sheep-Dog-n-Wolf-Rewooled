@@ -18,6 +18,7 @@ struct Animator;
 #include "../objects/animation.h"
 #include "../engine/progress_inventory.h"
 #include "wolf_api.h"
+extern s32 g_dtDither; /* time.cpp: Rewooled, rounds a frame-time step (see engine/approach.cpp) */
 
 extern EmitterDriftParams g_wolfDustParams, g_wolfTurnDustParams, g_wolfRocketFxParams, g_wolfLandDustParams,
     g_wolfSkidDustParams, g_wolfBreathParams;
@@ -623,13 +624,13 @@ void Wolf::UpdateTrailFx()
         work.p.y -= 10;
         if (g_weatherType != WEATHER_SNOW) {
             work.emit = work.emit && timeOutOfWater > 0 && timeOutOfWater < 0x14000;
-            if (particles.Emitter_UpdateTrail(&g_wolfWetPrintParams, &work.p, (speed * g_dt) >> 12, Facing(),
+            if (particles.Emitter_UpdateTrail(&g_wolfWetPrintParams, &work.p, ((speed * g_dt + g_dtDither) >> 12), Facing(),
                                               work.emit))
                 fxFlags |= WOLF_FA_FOOTPRINTS;
             else
                 ClearFxFlags(WOLF_FA_FOOTPRINTS);
         } else {
-            if (particles.Emitter_UpdateTrail(&g_wolfSnowPrintParams, &work.p, (speed * g_dt) >> 12, Facing(),
+            if (particles.Emitter_UpdateTrail(&g_wolfSnowPrintParams, &work.p, ((speed * g_dt + g_dtDither) >> 12), Facing(),
                                               work.emit))
                 fxFlags |= WOLF_FA_FOOTPRINTS;
             else

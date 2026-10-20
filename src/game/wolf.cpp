@@ -197,6 +197,7 @@ s32 Scenaric_FindByClass(u16 classId, ScnObject **out, s32 max);
 /* INST_F_TINT, the tint override. */
 #define SDW_INLINE_SCNOBJECT_SETTINTED_S32 1
 #include "../engine/scenaric_inlines.h"
+extern s32 g_dtDither; /* time.cpp: Rewooled, rounds a frame-time step (see engine/approach.cpp) */
 #undef SDW_INLINE_SCNOBJECT_SETTINTED_S32
 
 extern const u16 g_wolfAltModelIds[] = {WAR_IDO_AEXPLOS2, WAR_IDO_ABCOYO01, WAR_IDO_AMCOYO01, WAR_IDO_ACOLAP01,
@@ -2197,7 +2198,7 @@ void Wolf::StateMachine(Pad *pad)
                     SetState(WOLF_ST_FISHING_IDLE);
                 else {
                     w.reel = (w.reel * 300) >> 8;
-                    w.reel = (w.reel * g_dt) >> 12;
+                    w.reel = (w.reel * g_dt + g_dtDither) >> 12;
                     if (w.reel > 0)
                         heldObject->HandleMessage(this, MSG_ROD_REEL_IN, (void *)(sptr)w.reel);
                     else
