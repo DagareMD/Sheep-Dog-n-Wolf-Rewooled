@@ -17,6 +17,8 @@ void Options_SetDefaults(GameOptions *o)
     o->height = 1080;
     o->renderScale = 100;
     o->msaa = 0;
+    o->fpsLimit = 300;
+    o->vsync = 1;
     o->fullscreen = 0;
     o->controller = OPTIONS_CONTROLLER_KEYBOARD;
     o->startLevel = -1;
@@ -50,6 +52,8 @@ void Options_LoadSaved(GameOptions *o)
     Options_ReadInt(key, "Height", &o->height);
     Options_ReadInt(key, "RenderScale", &o->renderScale);
     Options_ReadInt(key, "Msaa", &o->msaa);
+    Options_ReadInt(key, "FpsLimit", &o->fpsLimit);
+    Options_ReadInt(key, "VSync", &o->vsync);
     Options_ReadInt(key, "Fullscreen", &o->fullscreen);
     Options_ReadInt(key, "Controller", &o->controller);
     Options_ReadInt(key, "StartLevel", &o->startLevel);
@@ -80,11 +84,23 @@ void Options_Save(const GameOptions *o)
     Options_WriteInt(key, "Height", o->height);
     Options_WriteInt(key, "RenderScale", o->renderScale);
     Options_WriteInt(key, "Msaa", o->msaa);
+    Options_WriteInt(key, "FpsLimit", o->fpsLimit);
+    Options_WriteInt(key, "VSync", o->vsync);
     Options_WriteInt(key, "Fullscreen", o->fullscreen);
     Options_WriteInt(key, "Controller", o->controller);
     Options_WriteInt(key, "StartLevel", o->startLevel);
     Options_WriteString(key, "GameDir", o->exeDir);
     Options_WriteInt(key, "CheckUpdates", o->checkUpdates);
+    Save_CloseKey(key);
+}
+
+void Options_SaveFrameSettings(int fpsLimit, int vsync)
+{
+    SaveKey *key = Save_OpenKey("");
+    if (!key)
+        return;
+    Options_WriteInt(key, "FpsLimit", fpsLimit);
+    Options_WriteInt(key, "VSync", vsync);
     Save_CloseKey(key);
 }
 
