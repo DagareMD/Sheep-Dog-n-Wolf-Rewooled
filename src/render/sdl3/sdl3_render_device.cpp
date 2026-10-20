@@ -221,6 +221,11 @@ struct Sdl3Texture {
     int dirty;         /* the texels changed since the last upload */
     int lockedToWrite; /* locked with write access: dirty at Unlock */
     u32 drawnInBatch;  /* the batch (Flush count) that last drew with it */
+    /* the sharp bilinear filter: gpu is then the texture enlarged gpuScale times, and src the texels as uploaded */
+    SDL_GPUTexture *src;
+    u32 gpuScale;      /* 0 or 1: gpu is the texture's own size */
+    int scalable;      /* made by CreateTexture (not the font, the white texel or a frame capture) */
+    int blitPending;   /* src was uploaded: gpu is made from it before the next draw */
 };
 
 /* texels to RGBA8, as Direct3D reads the three formats (565 has alpha 1) */
@@ -260,6 +265,79 @@ static void Sdl3_ConvertTexels(const Sdl3Texture *t, u8 *out)
                 out[3] = 255;
         }
     }
+}
+
+/* Sharp bilinear (g_textureFilterMode 2): a texture is kept on the GPU enlarged a whole number of times with
+ * nearest-neighbour, and sampled with the bilinear sampler. Every texel stays a sharp block, and only a band 1/scale of a
+ * texel wide is blended between neighbours, wherever the texture is shown. Not past SDL3_SHARP_MAX_SIZE, where the texture
+ * is large enough already. */
+#define SDL3_SHARP_SCALE 4
+#define SDL3_SHARP_MAX_SIZE 2048
+
+static u32 Sdl3_WantedScale(u32 w, u32 h)
+{
+    u32 side = w > h ? w : h, scale;
+    if (g_textureFilterMode != 2 || !side)
+        return 1;
+    scale = SDL3_SHARP_MAX_SIZE / side;
+    return scale > SDL3_SHARP_SCALE ? SDL3_SHARP_SCALE : (scale ? scale : 1);
+}
+
+static void Sdl3_FreeGpuTextures(SDL_GPUDevice *gpu, Sdl3Texture *t)
+{
+    if (t->gpu)
+        SDL_ReleaseGPUTexture(gpu, t->gpu); /* SDL keeps it until the submitted commands are done with it */
+    if (t->src)
+        SDL_ReleaseGPUTexture(gpu, t->src);
+    t->gpu = t->src = 0;
+}
+
+/* the GPU texture(s) for t (width, height set): one of its own size, or at a scale above 1 the enlarged one (a blit
+ * target) and the one of its own size that the texels are uploaded to */
+static int Sdl3_MakeGpuTextures(SDL_GPUDevice *gpu, Sdl3Texture *t, u32 scale)
+{
+    SDL_GPUTextureCreateInfo info;
+    SDL_zero(info);
+    info.type = SDL_GPU_TEXTURETYPE_2D;
+    info.format = SDL_GPU_TEXTUREFORMAT_R8G8B8A8_UNORM;
+    info.usage = scale > 1 ? (SDL_GPU_TEXTUREUSAGE_SAMPLER | SDL_GPU_TEXTUREUSAGE_COLOR_TARGET) : SDL_GPU_TEXTUREUSAGE_SAMPLER;
+    info.width = t->width * scale;
+    info.height = t->height * scale;
+    info.layer_count_or_depth = 1;
+    info.num_levels = 1;
+    t->gpu = t->src = 0;
+    if (!(t->gpu = SDL_CreateGPUTexture(gpu, &info)))
+        return 0;
+    if (scale > 1) {
+        info.usage = SDL_GPU_TEXTUREUSAGE_SAMPLER;
+        info.width = t->width;
+        info.height = t->height;
+        if (!(t->src = SDL_CreateGPUTexture(gpu, &info))) {
+            SDL_ReleaseGPUTexture(gpu, t->gpu);
+            t->gpu = 0;
+            return 0;
+        }
+    }
+    t->gpuScale = scale;
+    return 1;
+}
+
+/* the same for a texture that already has them, at another scale: the new ones replace the old, and are uploaded again */
+static int Sdl3_RemakeGpuTextures(SDL_GPUDevice *gpu, Sdl3Texture *t, u32 scale)
+{
+    Sdl3Texture fresh;
+    SDL_zero(fresh);
+    fresh.width = t->width;
+    fresh.height = t->height;
+    if (!Sdl3_MakeGpuTextures(gpu, &fresh, scale))
+        return 0;
+    Sdl3_FreeGpuTextures(gpu, t);
+    t->gpu = fresh.gpu;
+    t->src = fresh.src;
+    t->gpuScale = fresh.gpuScale;
+    t->blitPending = 0;
+    t->dirty = 1;
+    return 1;
 }
 
 /* ---- recorded draws ---- */
@@ -1114,6 +1192,17 @@ void Sdl3RenderDevice::Flush()
     u32 i, uploadBytes = vertexCount * sizeof(Sdl3Vertex), vertexBytes = uploadBytes;
     int uploads = 0;
 
+    /* the sharp filter keeps the textures enlarged on the GPU: choosing it in the menu, or another filter after it,
+     * makes them again (the texels are on the CPU still, and are uploaded again) */
+    for (i = 0; i < textureCount; i++) {
+        Sdl3Texture *t = textures[i];
+        u32 scale;
+        if (!t->scalable)
+            continue;
+        scale = Sdl3_WantedScale(t->width, t->height);
+        if (scale != (t->gpuScale ? t->gpuScale : 1))
+            Sdl3_RemakeGpuTextures(gpu, t, scale);
+    }
     for (i = 0; i < textureCount; i++)
         if (textures[i]->dirty) {
             uploadBytes += textures[i]->width * textures[i]->height * 4;
@@ -1186,15 +1275,36 @@ void Sdl3RenderDevice::Flush()
             SDL_zero(to);
             from.transfer_buffer = transfer;
             from.offset = offset;
-            to.texture = t->gpu;
+            to.texture = t->src ? t->src : t->gpu;
             to.w = t->width;
             to.h = t->height;
             to.d = 1;
             SDL_UploadToGPUTexture(copy, &from, &to, false);
+            if (t->src)
+                t->blitPending = 1;
             offset += t->width * t->height * 4;
             t->dirty = 0;
         }
         SDL_EndGPUCopyPass(copy);
+
+        /* the textures kept enlarged: made from the texels just uploaded, by an exact nearest-neighbour blit */
+        for (i = 0; i < textureCount; i++) {
+            Sdl3Texture *t = textures[i];
+            SDL_GPUBlitInfo blit;
+            if (!t->blitPending)
+                continue;
+            t->blitPending = 0;
+            SDL_zero(blit);
+            blit.source.texture = t->src;
+            blit.source.w = t->width;
+            blit.source.h = t->height;
+            blit.destination.texture = t->gpu;
+            blit.destination.w = t->width * t->gpuScale;
+            blit.destination.h = t->height * t->gpuScale;
+            blit.load_op = SDL_GPU_LOADOP_DONT_CARE;
+            blit.filter = SDL_GPU_FILTER_NEAREST;
+            SDL_BlitGPUTexture(cmd, &blit);
+        }
     }
 
     if (drawCount || clearColor || clearDepth) {
@@ -1250,7 +1360,7 @@ void Sdl3RenderDevice::Flush()
             if (d->texture != boundTexture || d->linear != boundLinear) {
                 SDL_GPUTextureSamplerBinding sampler;
                 sampler.texture = d->texture->gpu;
-                sampler.sampler = (d->linear && g_textureFilteringEnabled) ? linearSampler : pointSampler;
+                sampler.sampler = (d->linear && g_textureFilterMode != 0) ? linearSampler : pointSampler;
                 SDL_BindGPUFragmentSamplers(pass, 0, &sampler, 1);
                 boundTexture = d->texture;
                 boundLinear = d->linear;
@@ -1534,7 +1644,6 @@ void Sdl3RenderDevice::DrawPerfOverlay()
 s32 Sdl3RenderDevice::CreateTexture(u32 w, u32 h, u32 format, RdTexture **out, u32 *outWidth, u32 *outHeight)
 {
     Sdl3Texture *t;
-    SDL_GPUTextureCreateInfo info;
     *out = 0;
     if (format != TEXFMT_RGB565 && format != TEXFMT_ARGB1555 && format != TEXFMT_ARGB4444 && format != TEXFMT_RGBA8)
         return TEXRES_NO_PIXEL_FORMAT;
@@ -1549,23 +1658,15 @@ s32 Sdl3RenderDevice::CreateTexture(u32 w, u32 h, u32 format, RdTexture **out, u
         SDL_free(t);
         return TEXRES_OUT_OF_MEMORY;
     }
-    SDL_zero(info);
-    info.type = SDL_GPU_TEXTURETYPE_2D;
-    info.format = SDL_GPU_TEXTUREFORMAT_R8G8B8A8_UNORM;
-    info.usage = SDL_GPU_TEXTUREUSAGE_SAMPLER;
-    info.width = w;
-    info.height = h;
-    info.layer_count_or_depth = 1;
-    info.num_levels = 1;
-    if (!(t->gpu = SDL_CreateGPUTexture(gpu, &info)) || !TrackTexture(t)) {
-        if (t->gpu)
-            SDL_ReleaseGPUTexture(gpu, t->gpu);
+    t->width = w;
+    t->height = h;
+    if (!Sdl3_MakeGpuTextures(gpu, t, Sdl3_WantedScale(w, h)) || !TrackTexture(t)) {
+        Sdl3_FreeGpuTextures(gpu, t);
         SDL_free(t->pixels);
         SDL_free(t);
         return TEXRES_OUT_OF_MEMORY;
     }
-    t->width = w;
-    t->height = h;
+    t->scalable = 1;
     t->format = format;
     t->dirty = 1;
     *out = (RdTexture *)t;
@@ -1636,7 +1737,7 @@ void Sdl3RenderDevice::ReleaseTexture(RdTexture *texture)
     if (state.texture == t)
         state.texture = 0;
     UntrackTexture(t);
-    SDL_ReleaseGPUTexture(gpu, t->gpu); /* SDL keeps it until the submitted commands are done with it */
+    Sdl3_FreeGpuTextures(gpu, t);
     SDL_free(t->pixels);
     SDL_free(t);
 }
