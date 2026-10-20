@@ -46,6 +46,7 @@ extern const float g_viewDistFar;  /* 12000.0, the view distance at setting 0 */
 extern const float g_viewDistNear; /* 4000.0, the view distance at setting 255 */
 extern u32 g_gameFlags;
 extern s32 g_dt;
+extern s32 g_dtDither; /* time.cpp: Rewooled, rounds a frame-time step (see engine/approach.cpp) */
 extern s32 g_frameCount2;
 extern u32 *g_screenLayerBase;
 
@@ -477,7 +478,7 @@ void Inventory_UpdateFx()
     switch (g_invFlyDir) {
         case ITEMFLY_TO_WOLF:
         case ITEMFLY_TO_INVENTORY:
-            dt = g_dt * 0x2580 >> 12;
+            dt = (g_dt * 0x2580 + g_dtDither) >> 12;
             if (g_invFlyDir != ITEMFLY_TO_INVENTORY)
                 dt = -dt;
             if (g_itemFlightTime < 0xfff) {
@@ -507,12 +508,12 @@ void Inventory_UpdateFx()
     g_inventoryWheelYaw = Math_StepAngleTowards(g_inventoryWheelYaw, 0xc00, 0x400);
     if ((g_gameFlags & GF_ITEM_FLY) || (g_gameFlags & GF_ITEM_WHEEL_OPEN)) {
         if (g_invWheelSlide < 0) {
-            g_invWheelSlide += (s16)(g_dt * 0xb4 >> 12);
+            g_invWheelSlide += (s16)((g_dt * 0xb4 + g_dtDither) >> 12);
             if (g_invWheelSlide > 0)
                 g_invWheelSlide = 0;
         }
     } else if (g_invWheelSlide > -0x20) {
-        g_invWheelSlide -= (s16)(g_dt * 0xb4 >> 12);
+        g_invWheelSlide -= (s16)((g_dt * 0xb4 + g_dtDither) >> 12);
         if (g_invWheelSlide <= -0x20)
             g_invWheelSlide = -0x20;
     }

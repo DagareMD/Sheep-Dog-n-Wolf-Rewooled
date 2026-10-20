@@ -33,7 +33,7 @@ s16 Math_ApproachAngle(s16 cur, s16 target, s32 *rate, s32 limit, s32 accel, s32
         work.rate_step = accel;
     else
         work.rate_step = decel;
-    work.rate_step = (work.rate_step * g_dt) >> 12;
+    work.rate_step = (work.rate_step * g_dt + g_dtDither) >> 12; /* Rewooled: dithered, as Math_ApproachLinear's; truncated, it is ZERO below 4096 / g_dt and the turn rate cannot change */
     if (SDW_ABS(work.desired_rate - *rate) <= work.rate_step) {
         if (work.desired_rate > limit)
             work.desired_rate = limit;
@@ -50,7 +50,7 @@ s16 Math_ApproachAngle(s16 cur, s16 target, s32 *rate, s32 limit, s32 accel, s32
                 work.desired_rate = -limit;
         }
     }
-    work.step = (work.desired_rate * g_dt) >> 12;
+    work.step = (work.desired_rate * g_dt + g_dtDither) >> 12; /* Rewooled: dithered; the arithmetic shift rounded a left turn and a right turn differently */
     if (force_min_step && work.step == 0 && work.desired_rate != 0) {
         if (work.desired_rate >= 0)
             work.step = 1;
@@ -148,12 +148,13 @@ s32 Math_ApproachValue(s32 cur, s32 target, s32 *vel, s32 maxRate, s32 accel, s3
             maxRate = dist;
     }
     rate = Math_ApproachLinear(*vel, rate, maxRate, accel, decel);
-    target = cur + (rate * g_dt >> 12);
+    target = cur + ((rate * g_dt + g_dtDither) >> 12); /* Rewooled: dithered */
     *vel = rate;
     return target;
 }
 
-/* steps cur towards target by at most ratePerSec * g_dt / 4096 (truncated: zero below 4096 / g_dt). */
+/* steps cur towards target by at most ratePerSec * g_dt / 4096. Rewooled: rounded with g_dtDither; the original
+ * truncated it, which is zero below 4096 / g_dt, so at a high frame rate a slow step never moved at all. */
 s32 Math_StepTowards(s32 cur, s32 target, s32 ratePerSec)
 {
     s32 delta;
@@ -161,7 +162,7 @@ s32 Math_StepTowards(s32 cur, s32 target, s32 ratePerSec)
 
     delta = target - cur;
     if (delta != 0) {
-        step = ratePerSec * g_dt >> 12;
+        step = (ratePerSec * g_dt + g_dtDither) >> 12;
         if ((delta >= 0 ? delta : -delta) > step) {
             if (delta > 0)
                 delta = step;
@@ -181,7 +182,7 @@ s16 Math_StepAngleTowards(s16 cur, s16 target, s32 ratePerSec)
 
     delta = (s16)((s16)((target - cur + 0x800) & 0xfff) - 0x800);
     if (delta != 0) {
-        step = ratePerSec * g_dt >> 12;
+        step = (ratePerSec * g_dt + g_dtDither) >> 12;
         if ((delta >= 0 ? delta : -delta) > step) {
             if (delta > 0)
                 delta = step;
@@ -267,7 +268,7 @@ u8 PathFollower::Step()
 {
     Lerp_SetVecTarget(&PF_POINT(toIdx));
     Vec3s_LerpToTarget(&pos, &PF_POINT(fromIdx), t);
-    t = t + rate * g_dtMs / 1024;
+    t = t + (s32)((((s64)rate * g_dt * 1000 / 1024) + g_dtDither) >> 12); /* Rewooled: dithered, not truncated */
     if (t >= 0x1000) {
         if (toIdx == path->count - 1) {
             rate = 0;
@@ -302,7 +303,7 @@ u8 PathFollower::StepSmooth()
     b.y -= a.y;
     b.z -= a.z;
     heading = Math_RadiansToAngle4096((float)atan2((double)b.x, (double)b.z)) & 0xfff;
-    t = t + rate * g_dtMs / 1024;
+    t = t + (s32)((((s64)rate * g_dt * 1000 / 1024) + g_dtDither) >> 12); /* Rewooled: dithered, not truncated */
     if (t >= 0x1000) {
         if (toIdx == path->count - 1) {
             rate = 0;

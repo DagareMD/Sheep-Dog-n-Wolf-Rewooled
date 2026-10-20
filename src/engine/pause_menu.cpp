@@ -202,6 +202,8 @@ static void PauseMenu_ItemVoiceLanguage(u8 msg, MenuPage *item);
 static void PauseMenu_ItemTextureFiltering(u8 msg, MenuPage *item);
 static void PauseMenu_ItemScreenPercent(u8 msg, MenuPage *item);
 static void PauseMenu_ItemAntiAliasing(u8 msg, MenuPage *item);
+static void PauseMenu_ItemFpsLimit(u8 msg, MenuPage *item);
+static void PauseMenu_ItemVSync(u8 msg, MenuPage *item);
 void PauseMenu_ItemDisplayDone(u8 msg, MenuPage *item);
 void PauseMenu_ItemControlDevice(u8 msg, MenuPage *item);
 void PauseMenu_ItemCameraSpeed(u8 msg, MenuPage *item);
@@ -768,7 +770,8 @@ void PauseMenu_Build()
     Menu_AddItems(rewooledPage, PauseMenu_ItemCameraSpeed, PauseMenu_ItemCameraAcceleration,
                   PauseMenu_ItemInvertCameraJoystick, PauseMenu_ItemMeshOutlines, PauseMenu_ItemTextLanguage,
                   PauseMenu_ItemVoiceLanguage, PauseMenu_ItemTextureFiltering, PauseMenu_ItemScreenPercent,
-                  PauseMenu_ItemAntiAliasing, PauseMenu_ItemRewooledDone, MENU_END);
+                  PauseMenu_ItemAntiAliasing, PauseMenu_ItemFpsLimit,
+                  PauseMenu_ItemVSync, PauseMenu_ItemRewooledDone, MENU_END);
 
     Menu_AddItems(bindPage, PauseMenu_ItemBindUp, PauseMenu_ItemBindRight, PauseMenu_ItemBindDown,
                   PauseMenu_ItemBindLeft, PauseMenu_ItemBindAction, PauseMenu_ItemBindJump,
@@ -1168,6 +1171,60 @@ static void PauseMenu_ItemAntiAliasing(u8 msg, MenuPage *item)
             break;
         case MENU_MSG_VALUE_CHANGED:
             PauseMenu_SaveRenderSettings();
+            Ui_PlayMoveSound();
+            break;
+    }
+}
+
+/* FPS Limit: the frame rate the game is held to, 20 to 300 in steps of 5. It applies as soon as it is changed, and is saved.
+ * With V-Sync on, the display's refresh rate is a limit too: the lower of the two applies. */
+static void PauseMenu_ItemFpsLimit(u8 msg, MenuPage *item)
+{
+    char text[8];
+    int fps = g_options.fpsLimit;
+
+    if (fps < 20)
+        fps = fps <= 0 ? 300 : 20;
+    if (fps > 300)
+        fps = 300;
+    fps = (fps + 2) / 5 * 5; /* a value saved by hand rounds to a step */
+    switch (msg) {
+        case MENU_MSG_DRAW_SELECTED:
+            Menu_BuildNavFooter();
+            break;
+        case MENU_MSG_DRAW:
+            snprintf(text, sizeof(text), "%d", fps);
+            Menu_Printf(item, TEXTALIGN_LEFT, "FPS Limit");
+            Menu_Printf(item, TEXTALIGN_RIGHT, "%s", text);
+            break;
+        case MENU_MSG_LEFT:
+            g_options.fpsLimit = fps > 20 ? fps - 5 : 20;
+            break;
+        case MENU_MSG_RIGHT:
+            g_options.fpsLimit = fps < 300 ? fps + 5 : 300;
+            break;
+        case MENU_MSG_VALUE_CHANGED:
+            Options_SaveFrameSettings(g_options.fpsLimit, g_options.vsync);
+            Ui_PlayMoveSound();
+            break;
+    }
+}
+
+/* V-Sync: Yes, a frame waits for the display's refresh (no tearing, but never more frames than the display shows); No, it
+ * does not, so the FPS Limit can be above the refresh rate. It applies as soon as it is changed, and is saved. */
+static void PauseMenu_ItemVSync(u8 msg, MenuPage *item)
+{
+    switch (msg) {
+        case MENU_MSG_DRAW_SELECTED:
+            Menu_BuildNavFooter();
+            break;
+        case MENU_MSG_DRAW:
+            Menu_Printf(item, TEXTALIGN_LEFT, "V-Sync");
+            Menu_Printf(item, TEXTALIGN_RIGHT, g_onOffNames[g_options.vsync != 0]);
+            break;
+        case MENU_MSG_VALUE_CHANGED:
+            g_options.vsync = g_options.vsync ? 0 : 1;
+            Options_SaveFrameSettings(g_options.fpsLimit, g_options.vsync);
             Ui_PlayMoveSound();
             break;
     }

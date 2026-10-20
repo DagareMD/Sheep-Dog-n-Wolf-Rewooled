@@ -20,6 +20,12 @@ s32 g_dt = 0;
  * evenly), added before a per-frame step is truncated, so that a step under one unit still adds up over the frames
  * (Math_ApproachLinear) */
 s32 g_dtDither = 0;
+/* the port's: what the truncations below dropped, carried into the next frame. Without it every frame loses up to a unit
+ * (a 4096th of a second, or a 4096th of a millisecond), which at 60 frames a second is not noticeable but at 144 or 300
+ * makes the game run slow: a frame of 1/144 s is 28.4 units and became 28, and its 6.8 ms became 6. */
+static double g_dtRawCarry = 0.0;
+static s32 g_dtMsCarry = 0;
+static s32 g_dtRawMsCarry = 0;
 s32 g_rawTimeMs = 0;       /* the level time                                          */
 s32 g_frameCount2 = 0;     /* only read by two HUD blink functions                   */
 
@@ -43,6 +49,9 @@ void Time_Init()
     g_rawTime = 0;
     g_dtMs = 0;
     g_dtRawMs = 0;
+    g_dtRawCarry = 0.0;
+    g_dtMsCarry = 0;
+    g_dtRawMsCarry = 0;
     g_gameTimeMs = 0;
     g_rawTimeMs = 0;
 }
@@ -75,10 +84,13 @@ void Time_Update(void)
     s32 timer_enabled = 1;
     s32 new_time;
     /* The fixed-step alternative remains in the PC instructions. */
-    if (timer_enabled)
-        g_dtRaw = (s32)(g_pTimer->GetDelta(TIMER_SECONDS) * 4096.0);
-    else
+    if (timer_enabled) {
+        double units = g_pTimer->GetDelta(TIMER_SECONDS) * 4096.0 + g_dtRawCarry;
+        g_dtRaw = (s32)units;
+        g_dtRawCarry = units - (double)g_dtRaw;
+    } else {
         g_dtRaw = 0x88;
+    }
 
     if (g_gameFlags & GF_PAUSED)
         g_dt = 0;
@@ -93,8 +105,14 @@ void Time_Update(void)
 
     g_dtDither = (g_dtDither + 2531) & 4095;
     g_animDt = (g_dt * 1000) >> 2;
-    g_dtRawMs = (g_dtRaw * 1000) >> 12; /* truncated a second time */
-    g_dtMs = (g_dt * 1000) >> 12;
+    {
+        s32 rawMsUnits = g_dtRaw * 1000 + g_dtRawMsCarry; /* 4096ths of a millisecond */
+        s32 msUnits = g_dt * 1000 + g_dtMsCarry;
+        g_dtRawMs = rawMsUnits >> 12;
+        g_dtRawMsCarry = rawMsUnits & 4095;
+        g_dtMs = msUnits >> 12;
+        g_dtMsCarry = msUnits & 4095;
+    }
 
     new_time = g_gameTime + g_dt;
     if ((g_gameTime & 0xFFFFF000) != (new_time & 0xFFFFF000))

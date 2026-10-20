@@ -50,6 +50,7 @@ extern u32 g_gameFlags;
 /* ---- the object lookups ---- */
 /* ---- Vec3s_ScaleByDt ---- */
 extern s32 g_dt;
+extern s32 g_dtDither; /* time.cpp */
 /* ---- the box queries ---- */
 extern "C" {
 }
@@ -177,13 +178,20 @@ u16 Dav_FindResourceIndex(void *resource)
     return 0;
 }
 
-/* THE movement integrator (76 callers): displacement = velocity * g_dt / 4096, per axis, signed division
- * truncating toward zero, NO remainder carried to the next frame. This is why speed depends on frame rate and heading. */
+/* THE movement integrator (76 callers): displacement = velocity * g_dt / 4096, per axis.
+ * The original truncated it toward zero with NO remainder carried to the next frame. That is why speed depended on the
+ * frame rate and the heading: a frame is shorter at a high frame rate, so each axis loses a bigger share of its step
+ * (at 300 fps, 2000 units/s walking lost 10% and swimming at 300 units/s lost 35% along an axis and ALL of it on any
+ * other heading, whose steps are under one unit on both axes), and an axis with a small share of the heading loses it
+ * all, so the path is pulled toward the world axes.
+ * Rewooled: each axis is rounded with g_dtDither instead (as Math_ApproachLinear's step is, see engine/approach.cpp):
+ * the dither is a low-discrepancy sequence, so over the frames the steps add up to velocity * time at any frame rate, on
+ * every axis and so on every heading. A zero velocity is still a zero step. */
 void Vec3s_ScaleByDt(const Vec3s *vel, Vec3s *out)
 {
-    out->x = (s16)((vel->x * g_dt) / 4096);
-    out->y = (s16)((vel->y * g_dt) / 4096);
-    out->z = (s16)((vel->z * g_dt) / 4096);
+    out->x = (s16)((vel->x * g_dt + g_dtDither) >> 12);
+    out->y = (s16)((vel->y * g_dt + g_dtDither) >> 12);
+    out->z = (s16)((vel->z * g_dt + g_dtDither) >> 12);
 }
 
 /* the zone test: the first box of the list that contains the point, all three axes inclusive, else 0.
