@@ -96,6 +96,7 @@ struct CamResetPositions { /* the positions Camera_ResetMotion / Camera_Reset se
 #include "../engine/sound_mgr.h"
 extern u8 g_sharedScratch[]; /* C++ linkage, as the rest of the game declares it */
 extern s32 g_dt;
+extern s32 g_dtDither; /* time.cpp: Rewooled, rounds a frame-time step (see engine/approach.cpp) */
 extern s32 g_dtMs;
 extern u32 g_gameFlags;
 extern u32 g_gameTime; /* u32, as Time defines it */
@@ -253,7 +254,7 @@ static s32 Camera_ScaleControl(s32 value, u8 setting, s32 maxScale)
 static s32 Camera_ManualTurnStep(s32 input, s32 speed, s32 factor)
 {
     speed = Camera_ScaleControl(speed, g_camSpeedSetting, 2 * 0x1000);
-    return (s32)((s64)input * g_dt * speed * factor >> 20);
+    return (s32)(((s64)input * g_dt * speed * factor + ((s64)g_dtDither << 8)) >> 20);
 }
 
 static void Camera_LoadControlSettings()
@@ -1341,6 +1342,7 @@ void Camera_SolveCollision(Camera *cam, Vec3s *angles, s16 distance, s32 enabled
         u16 unuseda;
         s32 modeDistance, snapYaw;
     } w;
+    Vec3s desiredEye; /* Rewooled: the eye as first placed along the smoothed angles, to see whether collision moved it */
     w.recalculate = 0;
     w.verticalBlocked = 0;
     w.foundClear = 0;
@@ -1442,6 +1444,7 @@ void Camera_SolveCollision(Camera *cam, Vec3s *angles, s16 distance, s32 enabled
         w.eye.y = maxVert;
         w.recalculate = 1;
     }
+    desiredEye = w.eye;
     if (w.autoEnabled) {
         if (g_camPitchAdjTimerMs > 0)
             g_camPitchAdjTimerMs -= (s16)g_dtMs;
@@ -1550,7 +1553,14 @@ void Camera_SolveCollision(Camera *cam, Vec3s *angles, s16 distance, s32 enabled
             w.eye.x = w.delta.x + cam->pos.x;
             w.eye.y = w.delta.y + cam->pos.y;
             w.eye.z = w.delta.z + cam->pos.z;
-            w.recalculate = 1;
+            /* Rewooled: the original always converted the eye back into angles here (Camera_EyeToAngles). The eye is a
+             * whole-number position, so that conversion rounds the pitch and the distance by up to a unit; they feed the
+             * next frame's smoothing, and while the camera turns (the eye moving sideways, its rounding changing every
+             * frame) the pitch flickers by a unit or more and the distance wanders: a vertical vibration in the third
+             * person view, worse at high frame rates. When nothing moved the eye the smoothed angles and distance are
+             * exactly what it was placed with, so they are kept. */
+            if (w.eye.x != desiredEye.x || w.eye.y != desiredEye.y || w.eye.z != desiredEye.z)
+                w.recalculate = 1;
             g_camFlags.tooFarCut = 0;
             g_camZoomOut -= 10;
             if (g_camZoomOut < 0)
@@ -1881,7 +1891,7 @@ void Camera_UpdateSamChase(Camera *camera, Pad *pad)
         }
         if (w.side)
             Camera_OnManualRotate(w.side);
-        w.side += ((g_camAutoYawRate << 8) * g_dt) >> 20;
+        w.side += (((g_camAutoYawRate << 8) * g_dt) + (g_dtDither << 8)) >> 20;
         w.distance = camera->dist;
         if (g_camReqFlags.useYaw)
             w.angles.y = g_camReqRot.y;
@@ -1893,7 +1903,7 @@ void Camera_UpdateSamChase(Camera *camera, Pad *pad)
                 w.angles.x = g_camReqRot.x;
             else if (g_camPitchAdjState.state) {
                 w.closeDistance = camera->dist < 200;
-                w.angles.x = camera->rot.x + (g_camAutoPitchRate * g_dt >> 12);
+                w.angles.x = camera->rot.x + ((g_camAutoPitchRate * g_dt + g_dtDither) >> 12);
                 if (w.angles.x > 0x300)
                     w.angles.x = 0x300;
                 if (w.angles.x < g_camMinPitch)
@@ -1919,7 +1929,7 @@ void Camera_UpdateSamChase(Camera *camera, Pad *pad)
             }
         } else if (g_camAutoPitchRate) {
             if (camera->rot.x < 0x300)
-                w.angles.x = camera->rot.x + (g_camAutoPitchRate * g_dt >> 12);
+                w.angles.x = camera->rot.x + ((g_camAutoPitchRate * g_dt + g_dtDither) >> 12);
         } else
             w.angles.x = camera->rot.x;
         if (w.side)
@@ -2132,7 +2142,7 @@ void Camera_UpdateFollow(Camera *camera, Pad *pad)
             w.side = 0;
         w.side = Camera_ManualTurnStep(w.side, w.speeds.y, 2);
     }
-    w.side += (g_camAutoYawRate * 256 * g_dt) >> 20;
+    w.side += ((g_camAutoYawRate * 256 * g_dt) + (g_dtDither << 8)) >> 20;
     if (g_camReqDist)
         w.distance = g_camReqDist;
     else {
@@ -2166,7 +2176,7 @@ void Camera_UpdateFollow(Camera *camera, Pad *pad)
         if (g_camReqFlags.usePitch)
             w.angles.x = g_camReqRot.x;
         else if (g_camPitchAdjState.state) {
-            w.angles.x = camera->rot.x + (g_camAutoPitchRate * g_dt >> 12);
+            w.angles.x = camera->rot.x + ((g_camAutoPitchRate * g_dt + g_dtDither) >> 12);
             if (w.angles.x > 0x300)
                 w.angles.x = 0x300;
             if (w.angles.x < g_camMinPitch) {
@@ -2197,7 +2207,7 @@ void Camera_UpdateFollow(Camera *camera, Pad *pad)
         if (g_camAutoPitchRate) {
             w.angles.x = camera->rot.x;
             if (w.angles.x < 0x300)
-                w.angles.x += (s16)(g_camAutoPitchRate * g_dt >> 12);
+                w.angles.x += (s16)((g_camAutoPitchRate * g_dt + g_dtDither) >> 12);
         } else
             w.angles.x = camera->rot.x;
     }
@@ -2513,7 +2523,7 @@ void Camera_UpdateOrbit_Unused(Camera *camera, Pad *pad)
         if (!(pad->cur.buttons & ~g_padMasks[5]))
             w.side += 256;
     }
-    w.side = (w.side * g_dt * w.speeds.y * 2) >> 20;
+    w.side = (w.side * g_dt * w.speeds.y * 2 + (g_dtDither << 8)) >> 20;
     w.distance = w.params->dist;
     w.angles.x = g_camMinPitch;
     w.angles.y = camera->rot.y;
@@ -2954,7 +2964,7 @@ void Camera_Update(Camera *camera, u8 mode, Pad *pad, Pad *mouse)
             Camera_UpdateDebugFreeCam(camera, pad, mouse);
             break;
         default:
-            w.step = g_dt * 960 >> 12;
+            w.step = (g_dt * 960 + g_dtDither) >> 12;
             if (mode != CAM_LOOK) {
                 if (!(pad->cur.buttons & ~(u16)~PAD_LEFT))
                     camera->pos.x -= w.step;

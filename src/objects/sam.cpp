@@ -40,6 +40,7 @@ struct CollisionScratch {
     unsigned char contactClass[16];
 };
 extern int g_dt, g_dtMs;
+extern s32 g_dtDither; /* time.cpp: Rewooled, rounds a frame-time step (see engine/approach.cpp) */
 extern "C" s16 g_sinTable4096[5122];
 extern "C" const s16 *g_pCosTable;
 extern unsigned char g_sharedScratch[];
@@ -1273,7 +1274,7 @@ void Sam::SetState(unsigned char state)
 /* Sam_ResetStallAnchor; 74 compared bytes including any local tables. */
 void Sam::ResetStallAnchor()
 {
-    stallClockMs = (unsigned short)((g_dt * 1000) >> 12);
+    stallClockMs = (unsigned short)g_dtMs;
     stallAnchor = pos;
     stallBestDist = 0;
 }
@@ -1282,7 +1283,7 @@ void Sam::ResetStallAnchor()
 void Sam::UpdateStallTracker()
 {
     int distance;
-    stallClockMs += (unsigned short)((g_dt * 1000) >> 12);
+    stallClockMs += (unsigned short)g_dtMs;
     distance = Vec3s_ManhattanDistXZ(&pos, &stallAnchor);
     if (distance > stallBestDist)
         stallBestDist = distance;
@@ -1653,7 +1654,7 @@ void Sam::Update()
     w.wolfDx = g_pWolf->pos.x - w.selfPos->x;
     w.wolfDz = g_pWolf->pos.z - w.selfPos->z;
     yawToWolf = (Math_RadiansToAngle4096((float)atan2((double)w.wolfDx, (double)w.wolfDz)) + 0x800) & 0xFFF;
-    w.dt = (g_dt * 1000) >> 12;
+    w.dt = g_dtMs;
     stateTimerMs += w.dt;
     lifeTimerMs += w.dt;
     if (HasAnimFlags(ANIM_F_FINISHED)) {
@@ -1677,7 +1678,7 @@ void Sam::Update()
                 Sound_Play(SND_SGORUN, this, w.initialVolume, SNDF_LOOP | SNDF_POSITIONAL | SNDF_NO_RETRIGGER, 0x1000);
         } else {
             if (chaseSoundBits.volume != 255) {
-                w.soundVolume = chaseSoundBits.volume + ((g_dtMs * 255) >> 10) + 1;
+                w.soundVolume = chaseSoundBits.volume + (((g_dt * 255000 / 1024) + g_dtDither) >> 12) + 1;
                 if (w.soundVolume > 255)
                     w.soundVolume = 255;
             } else
@@ -2014,7 +2015,7 @@ void Sam::Update()
             break;
         case SAM_STT_LOOKAFTER:
         case SAM_STT_LOOKAFTER_TIMED:
-            headSweepPhase = (headSweepPhase + headSpeed * (g_dtMs >> 1)) & 0xFFF;
+            headSweepPhase = (headSweepPhase + ((headSpeed * g_dt * 500 + g_dtDither) >> 12)) & 0xFFF;
             headYaw = (g_sinTable4096[headSweepPhase] * maxAngle) / 360;
             w.jointAngles.x = 0;
             w.jointAngles.y = headYaw;

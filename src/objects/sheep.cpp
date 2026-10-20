@@ -182,6 +182,7 @@ extern Wolf *g_pWolf;
 extern u32 g_gameTime;
 extern u8 g_sharedScratch[];
 extern s32 g_dt, g_dtMs;
+extern s32 g_dtDither; /* time.cpp: Rewooled, rounds a frame-time step (see engine/approach.cpp) */
 extern "C" s16 g_sinTable4096[5122];
 extern "C" const s16 *g_pCosTable;
 #include "../sdk/crt.h"
@@ -1029,19 +1030,19 @@ s32 Sheep::MoveToward(Vec3s *target, s32 stopDistance)
     w.velocity.x = (s16)(-250 * g_sinTable4096[w.steer] / 4096);
     w.velocity.z = (s16)(-250 * g_pCosTable[w.steer] / 4096);
     w.velocity.y = (s16)w.speed;
-    w.delta.y = (s16)(w.speed * g_dt >> 12);
+    w.delta.y = (s16)((w.speed * g_dt + g_dtDither) >> 12);
     if (!stopDistance && w.distance <= 5) {
         w.delta.x = target->x - pos.x;
         w.delta.z = target->z - pos.z;
     } else {
         if (ABS_VALUE(w.difference) < 8192) {
-            w.step = g_dt * 250 >> 12;
+            w.step = (g_dt * 250 + g_dtDither) >> 12;
             if (w.step > w.distance && w.steer == w.targetHeading) {
                 w.delta.x = (s16)(-w.distance * g_sinTable4096[w.steer] / 4096);
                 w.delta.z = (s16)(-w.distance * g_pCosTable[w.steer] / 4096);
             } else {
-                w.delta.x = (s16)(w.velocity.x * g_dt / 4096);
-                w.delta.z = (s16)(w.velocity.z * g_dt / 4096);
+                w.delta.x = (s16)((w.velocity.x * g_dt + g_dtDither) >> 12);
+                w.delta.z = (s16)((w.velocity.z * g_dt + g_dtDither) >> 12);
             }
         } else {
             w.velocity.x = w.velocity.z = 0;
@@ -1125,7 +1126,7 @@ void Sheep::Update()
                 w.specialDelta.x = 0;
                 w.specialDelta.y = 0;
                 w.specialDelta.z = 0;
-                w.specialDelta.y = (s16)(g_dtMs * 1300 / 1000);
+                w.specialDelta.y = (s16)((g_dt * 1300 + g_dtDither) >> 12);
                 if (w.specialDelta.y > 40)
                     w.specialDelta.y = 40;
                 else if (w.specialDelta.y <= 0)

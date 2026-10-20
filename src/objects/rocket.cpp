@@ -90,6 +90,7 @@ const u16 g_rocketStateAnims[][2] = {{AFUSEE01_ANIM_STAND, ROCKET_AF_SHADOW},
 extern u32 *g_screenLayerBase;
 extern u32 g_gameTime;
 extern s32 g_dt;
+extern s32 g_dtDither; /* time.cpp: Rewooled, rounds a frame-time step (see engine/approach.cpp) */
 Sprite g_rocketFuelIconSprite;
 Sprite g_rocketGaugeSprite;
 Sprite g_rocketDamageIconSprite;
@@ -172,7 +173,7 @@ void Rocket::Update()
                 SetState(ROCKET_IDLE);
             break;
         case ROCKET_FLYING:
-            hits = (g_dt >> 2) + hits;
+            hits = ((g_dt * 1024 + g_dtDither) >> 12) + hits;
             if (hits > hitsMax)
                 hits = hitsMax;
             break;
@@ -260,7 +261,7 @@ sptr Rocket::HandleMessage(ScnObject *sender, u32 msgId, void *arg)
             return HELD_ROCKET;
         case MSG_ROCKET_BURN_FUEL:
             if ((u16)engineSoundHandle) {
-                w.step = (g_dt << 12) / 0x2000;
+                w.step = (g_dt * 2048 + g_dtDither) >> 12;
                 if ((s32)(sptr)arg > g_dt)
                     enginePitch += w.step;
                 else

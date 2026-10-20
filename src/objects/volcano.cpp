@@ -69,6 +69,8 @@ extern "C" s16 Math_RadiansToAngle4096(float);
 #undef SDW_INLINE_FREE_GETPROP_VOID_U32
 #define SDW_INLINE_LAUNCHARC_INITCOEFFICIENTS_S32_S32_S32_S32_S32_S32_S32_S32_S32 1
 #include "../engine/launch_arc_inlines.h"
+extern s32 g_dt;
+extern s32 g_dtDither; /* time.cpp: Rewooled, rounds a frame-time step (see engine/approach.cpp) */
 #undef SDW_INLINE_LAUNCHARC_INITCOEFFICIENTS_S32_S32_S32_S32_S32_S32_S32_S32_S32
 inline s32 LaunchArc::StepPoint(s32 dt, Vec3s *out)
 {
@@ -204,7 +206,7 @@ void Volcano::Update()
                                                          380 / (lavaBody.AnimDuration(ALAVE02_ANIM_SPLASH, 0) >> 1));
                 if (hitBox.min.y < hitBox.max.y - 380)
                     hitBox.min.y = hitBox.max.y - 380;
-                timerMs -= g_dtMs * 3 / 2;
+                timerMs -= (g_dt * 1500 + g_dtDither) >> 12;
             } else if (timerMs > 0) {
                 hitBox.min.y = hitBox.max.y - timerMs * 380 / (lavaBody.AnimDuration(ALAVE02_ANIM_SPLASH, 0) >> 1);
                 timerMs -= g_dtMs;

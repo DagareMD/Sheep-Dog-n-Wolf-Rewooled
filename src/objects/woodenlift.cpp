@@ -43,6 +43,7 @@ void Camera_StartScripted(ScnObject *owner, Camera *cam, u16 rotX, u16 rotY, u16
                           s32 time);
 extern Wolf *g_pWolf;
 extern s32 g_dt;
+extern s32 g_dtDither; /* time.cpp: Rewooled, rounds a frame-time step (see engine/approach.cpp) */
 
 /* A designer property of the WAR record: the dword at record + 0x14 + offset. */
 #define SDW_INLINE_FREE_SCN_GETPROPS32_VOID_U32 1
@@ -222,7 +223,7 @@ s32 WoodenLift::Move(s16 dir)
     origin.z = pos.z;
     delta.x = 0;
     delta.z = 0;
-    step = speed * g_dt / 4096;
+    step = (speed * g_dt + g_dtDither) >> 12;
     delta.y = (s16)(step * dir);
     if (dir == 1) {
         for (n = 0; n < hits; n++) {

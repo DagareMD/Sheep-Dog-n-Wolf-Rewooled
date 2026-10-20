@@ -97,6 +97,8 @@ inline CollBox *ScnObject::GetFirstModelBox()
 #define SDW_INLINE_LAUNCHARC_INITCOEFFICIENTS_S32_S32_S32_S32_S32_S32_S32_S32_S32 1
 #define SDW_INLINE_LAUNCHARC_STEP_S32_S16_S16_S16 1
 #include "../engine/launch_arc_inlines.h"
+extern s32 g_dt;
+extern s32 g_dtDither; /* time.cpp: Rewooled, rounds a frame-time step (see engine/approach.cpp) */
 #undef SDW_INLINE_LAUNCHARC_INITCOEFFICIENTS_S32_S32_S32_S32_S32_S32_S32_S32_S32
 #undef SDW_INLINE_LAUNCHARC_STEP_S32_S16_S16_S16
 #define ABS_VALUE(v) ((v) >= 0 ? (v) : -(v))
@@ -539,7 +541,7 @@ void Catapult::Update()
             break;
         case CAT_ST_THROW:
             stateJustEntered = 0;
-            armSwingT += (s16)(g_dtMs >> 3);
+            armSwingT += (s16)((g_dt * 125 + g_dtDither) >> 12);
             if (armSwingT > 256)
                 armSwingT = 256;
             angle = (g_pCosTable[(s16)(armSwingT * 0x44 & 0xfff)] * armAngle) / (armSwingT * 128 + 4096);
@@ -554,7 +556,7 @@ void Catapult::Update()
                 }
                 if (mobileCamera)
                     TrackCamera(&arc.obj->pos, mobileCamera, 0);
-                step = g_dtMs >> 3;
+                step = (g_dt * 125 + g_dtDither) >> 12;
                 if (arc.t < 128)
                     step = (arc.t * step + (128 - arc.t) * (step * 4)) >> 7;
                 if (arc.Step(step, &x, &y, &z)) {
@@ -584,7 +586,7 @@ void Catapult::Update()
             break;
         case CAT_ST_ARM_RETURN:
             stateJustEntered = 0;
-            armSwingT += (s16)(g_dtMs >> 2);
+            armSwingT += (s16)((g_dt * 250 + g_dtDither) >> 12);
             if (armSwingT > 256)
                 armSwingT = 256;
             AdvanceAnim();

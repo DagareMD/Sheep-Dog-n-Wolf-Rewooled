@@ -86,6 +86,7 @@ void Box_Translate(CollBox *box, const Vec3s *point);
 
 #define SDW_INLINE_FREE_PROPU32_VOID_U32 2
 #include "../engine/scn_tools_inlines.h"
+extern s32 g_dtDither; /* time.cpp: Rewooled, rounds a frame-time step (see engine/approach.cpp) */
 #undef SDW_INLINE_FREE_PROPU32_VOID_U32
 
 /* Case 0x14's six worldBox assignments, moved here unchanged: a device. */
@@ -232,8 +233,8 @@ void FloatingBox::Update()
                     boxFlags &= ~FBOX_F_BOUNCE;
                     rot = savedRotation;
                 } else if (w.angle > 1024 && hitClass != CLASSID_WOLF) {
-                    bounceRotation.x += (s16)((bounceVelocity.x >= 0 ? 1 : -1) * (s16)(((g_dtMs << 10) / 400) & 0xfff));
-                    bounceRotation.z += (s16)((bounceVelocity.z >= 0 ? 1 : -1) * (s16)(((g_dtMs << 10) / 400) & 0xfff));
+                    bounceRotation.x += (s16)((bounceVelocity.x >= 0 ? 1 : -1) * (s16)(((g_dt * 2560 + g_dtDither) >> 12) & 0xfff));
+                    bounceRotation.z += (s16)((bounceVelocity.z >= 0 ? 1 : -1) * (s16)(((g_dt * 2560 + g_dtDither) >> 12) & 0xfff));
                     rot = bounceRotation;
                 }
             } else {

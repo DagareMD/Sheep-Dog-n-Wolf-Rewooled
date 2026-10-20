@@ -59,6 +59,7 @@ u32 Anim_Start(Instance *inst, Animator *animator, u16 id, u32 opts);
 static u8 s_cineOpStride[9] = {0, 8, 8, 4, 2, 2, 4, 2, 2};
 
 extern s32 g_dt;
+extern s32 g_dtDither; /* time.cpp: Rewooled, rounds a frame-time step (see engine/approach.cpp) */
 extern s32 g_dtMs;
 #include "camera.h"
 #include "../engine/scenaric.h"
@@ -123,8 +124,8 @@ void SmallRock::ApplyGravity(Vec3s *velocity)
     if (speed > 1000)
         speed = 1000;
     if (sliding)
-        velocity->z -= (s16)((g_dt * 400) / 4096);
-    velocity->y += (s16)((speed * g_dt) / 4096);
+        velocity->z -= (s16)((g_dt * 400 + g_dtDither) >> 12);
+    velocity->y += (s16)((speed * g_dt + g_dtDither) >> 12);
 }
 
 u16 SmallRock::Move(Vec3s *delta, u16 resolveFlags)
@@ -243,7 +244,7 @@ void SmallRock::Update()
             moveFlags.movableContact = 1;
             break;
         case SROCK_ST_LAUNCHED:
-            if (launch.Step(g_dtMs >> 2, &point.x, &point.y, &point.z)) {
+            if (launch.Step((g_dt * 250 + g_dtDither) >> 12, &point.x, &point.y, &point.z)) {
                 localDelta.x = point.x - pos.x;
                 localDelta.y = point.y - pos.y;
                 localDelta.z = point.z - pos.z;

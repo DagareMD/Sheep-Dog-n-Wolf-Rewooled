@@ -115,6 +115,8 @@ extern "C" s16 g_sinTable4096[5122];
 extern "C" const s16 *g_pCosTable;
 extern Wolf *g_pWolf;
 extern s32 g_dt;
+extern s32 g_dtMs;
+extern s32 g_dtDither; /* time.cpp: Rewooled, rounds a frame-time step (see engine/approach.cpp) */
 s32 Vec3s_ManhattanDist(Vec3s *, Vec3s *), Vec3s_ManhattanDistXZ(Vec3s *, Vec3s *), Vec3s_DistXZ(Vec3s *, Vec3s *);
 extern "C" s16 Math_RadiansToAngle4096(float);
 void Camera_StartScripted(ScnObject *, Camera *, u16, u16, u16, Vec3s *, u16, u32, s32);
@@ -578,7 +580,7 @@ inline void DancingGhost::UpdateState()
     if (NEW(this))
         ELAPSED(this) = 0;
     else if (!Game_IsPaused() && !Map_IsOpen())
-        ELAPSED(this) = (g_dt * 1000 >> 12) + ELAPSED(this);
+        ELAPSED(this) = g_dtMs + ELAPSED(this);
     switch (steps[0].step) {
         case DG_STEP_WATCH_WOLF:
             if (NEW(this)) {

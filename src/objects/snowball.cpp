@@ -63,6 +63,7 @@ u16 Sound_Play(u16 soundId, void *owner, u16 volume, u8 flags, s32 rate);
 
 extern Wolf *g_pWolf;
 extern s32 g_dt;
+extern s32 g_dtDither; /* time.cpp: Rewooled, rounds a frame-time step (see engine/approach.cpp) */
 
 /* A designer property of the WAR record: the dword at record + 0x14 + offset. */
 #define SDW_INLINE_FREE_SCN_GETPROPU32_U16_U32 1
@@ -300,7 +301,7 @@ void Snowball::ApplyGravity(Vec3s *vel)
     speed = fallTime * 4000 >> 12;
     if (speed > 3000)
         speed = 3000;
-    vel->y += (s16)(speed * g_dt / 4096);
+    vel->y += (s16)((speed * g_dt + g_dtDither) >> 12);
 }
 
 /* the class factory for CLASSID 75 "Snowball": new Snowball (the base vtables in turn, then Snowball's),

@@ -32,6 +32,7 @@ extern Wolf *g_pWolf;
 #define g_camPos (g_camera.pos)
 
 extern s32 g_dt, g_dtMs;
+extern s32 g_dtDither; /* time.cpp: Rewooled, rounds a frame-time step (see engine/approach.cpp) */
 s32 Scenaric_FindByClass(u16, ScnObject **, s32);
 s32 Vec3s_DistSqXZ(Vec3s *, Vec3s *);
 u16 Sound_Play(u16, void *, u16, u8, s32);
@@ -258,7 +259,7 @@ s32 Battery::StepCollectFlight()
 {
     u16 delta = 0;
     Vec3s target;
-    delta = (u16)(g_dt * 9600 >> 12);
+    delta = (u16)((g_dt * 9600 + g_dtDither) >> 12);
     if (flyT < 3800) {
         Mat44 matrix;
         g_camera.viewMat.Transpose3x3(&matrix);

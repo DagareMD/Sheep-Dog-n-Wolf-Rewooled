@@ -23,6 +23,7 @@ s32 ObjGrid_QueryBoxOverlap(CollBox *box, ScnObject **out);
 s32 ObjGrid_QueryBoxPoints(const CollBox *query, ScnObject **out);
 s32 Box_GroundQueryFlatTop(GroundQuery *q, CollBox *box, Vec3s *boxPos, s32 margin);
 extern s32 g_dt;
+extern s32 g_dtDither; /* time.cpp: Rewooled, rounds a frame-time step (see engine/approach.cpp) */
 
 /* A designer property of the WAR record: the dword at record + 0x14 + offset. */
 #define SDW_INLINE_FREE_SCN_GETPROPS32_VOID_U32 1
@@ -96,7 +97,7 @@ void WoodenPlatForm::MoveTowards(s16 targetY)
 
     delta.x = 0;
     delta.z = 0;
-    step = speed * g_dt / 4096;
+    step = (speed * g_dt + g_dtDither) >> 12;
     if (targetY > pos.y) {
         delta.y = (s16)step;
         probe.x = pos.x;

@@ -106,6 +106,8 @@ inline CollBox *ScnObject::GetFirstModelBox()
 
 #define SDW_INLINE_FREE_BOX_CONTAINSPOINT_BOX_VEC3S 1
 #include "../engine/coll_box_inlines.h"
+extern s32 g_dt;
+extern s32 g_dtDither; /* time.cpp: Rewooled, rounds a frame-time step (see engine/approach.cpp) */
 #undef SDW_INLINE_FREE_BOX_CONTAINSPOINT_BOX_VEC3S
 
 /* Inline forms of the overlap expressions
@@ -814,7 +816,7 @@ s32 seesaw::CustomCollide(ScnObject *querier, CollBox *mover, Vec3s *disp, s32 *
                 temp_hits++;
                 currentHeight = (-currentHeight >> 4) - 1;
                 *outY = currentHeight;
-                AddBody(querier, (disp->y << 10) / g_dtMs);
+                AddBody(querier, g_dt > 0 ? (s32)(((s64)disp->y << 22) / ((s64)g_dt * 1000)) : 0);
                 if (*nContacts < 16) {
                     (*nContacts)++;
                     value_contact++;
@@ -1157,7 +1159,7 @@ void seesaw::UpdateLaunches()
     arcCurrent = launches;
     for (localI = 0; localI < launchCount; localI++, arcCurrent++) {
         localDone = 0;
-        if (arcCurrent->Step(g_dtMs >> 2, &localPoint.x, &localPoint.y, &localPoint.z)) {
+        if (arcCurrent->Step((g_dt * 250 + g_dtDither) >> 12, &localPoint.x, &localPoint.y, &localPoint.z)) {
             if (arcCurrent->obj->GetFirstModelBox()) {
                 currentPrevious = &launchPos[localI];
                 localDelta.x = localPoint.x - arcCurrent->obj->pos.x;

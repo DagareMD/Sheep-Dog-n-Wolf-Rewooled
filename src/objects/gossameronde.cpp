@@ -22,6 +22,7 @@ u32 Anim_Start(Instance *, Animator *, u16, u32);
 extern Wolf *g_pWolf;
 #include "sheep.h"
 extern s32 g_dt;
+extern s32 g_dtDither; /* time.cpp: Rewooled, rounds a frame-time step (see engine/approach.cpp) */
 #include "../sdk/crt.h"
 #define ABS_VALUE(x) ((x) >= 0 ? (x) : -(x))
 void GossamerOnde::PostLoadInit()
@@ -49,7 +50,7 @@ void GossamerOnde::Update()
                 wolfPushed = 0;
                 SetState(GONDE_ST_DONE);
             } else
-                radius += (u16)(g_dt * 875 >> 12);
+                radius += (u16)((g_dt * 875 + g_dtDither) >> 12);
             break;
     }
     AdvanceAnim();

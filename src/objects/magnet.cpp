@@ -41,6 +41,7 @@ s32 Vec3s_Dist(Vec3s *a, Vec3s *b);
 s32 ObjGrid_QueryBoxPoints(const CollBox *query, ScnObject **out);
 u16 Sound_Play(u16 soundId, void *owner, u16 volume, u8 flags, s32 rate);
 extern s32 g_dt;
+extern s32 g_dtDither; /* time.cpp: Rewooled, rounds a frame-time step (see engine/approach.cpp) */
 
 #define SDW_INLINE_SCNOBJECT_GETPARENT 1
 #include "../engine/scenaric_inlines.h"
@@ -57,7 +58,7 @@ void Magnet::PullMover(MoveModifyArg *arg, ScnObject *mover)
     s32 u;   /* attraction strength */
     if (arg->velocity.y > 300) {
         arg->velocity.y = 300;
-        arg->delta.y = (s16)(g_dt * 300 >> 12);
+        arg->delta.y = (s16)((g_dt * 300 + g_dtDither) >> 12);
     }
     q.x = mover->pos.x + arg->delta.x;
     q.y = mover->pos.y + arg->delta.y;
@@ -79,7 +80,7 @@ void Magnet::PullMover(MoveModifyArg *arg, ScnObject *mover)
             s = 340 - (t - 60);
         u = s * s * 600 / 115600;
     }
-    s = u * g_dt / 4096;
+    s = (u * g_dt + g_dtDither) >> 12;
     if (s >= t) {
         arg->delta.x = attractPos.x - mover->pos.x;
         arg->delta.y = attractPos.y - mover->pos.y;

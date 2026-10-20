@@ -29,6 +29,7 @@ u32 Anim_Start(Instance *, Animator *, u16, u32);
 #undef SDW_INLINE_SCNBODY_PLAYANIM_U16_S32_S32
 extern Wolf *g_pWolf;
 extern s32 g_dt;
+extern s32 g_dtDither; /* time.cpp: Rewooled, rounds a frame-time step (see engine/approach.cpp) */
 #include "../engine/scn_tools.h"
 #include "../engine/fixed_math.h"
 s32 Vec3s_Dist(Vec3s *, Vec3s *);
@@ -110,7 +111,7 @@ void BlackHole::ApplyPull(MoveModifyArg *move, ScnObject *object)
     move->velocity.x += pullVelocity.x;
     move->velocity.y += pullVelocity.y;
     move->velocity.z += pullVelocity.z;
-    closeness = strength * g_dt / 4096;
+    closeness = (strength * g_dt + g_dtDither) >> 12;
     if (closeness >= range) {
         move->delta.x = pos.x - sourcePos.x;
         move->delta.y = pos.y - sourcePos.y;

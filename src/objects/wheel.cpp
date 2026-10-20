@@ -39,6 +39,7 @@
 
 extern Wolf *g_pWolf;
 extern s32 g_dt;
+extern s32 g_dtDither; /* time.cpp: Rewooled, rounds a frame-time step (see engine/approach.cpp) */
 extern s32 g_dtMs;
 extern "C" s16 g_sinTable4096[5122];
 extern "C" const s16 *g_pCosTable;
@@ -214,11 +215,11 @@ void Wheel::Update()
     PlaceLifts(&spin.x);
     UpdateSpin();
     if (railTravel <= (translation >> 1) && glow < 1000) {
-        glow = g_dtMs * 1000 / (s32)(raisingTime >> 1) + glow;
+        glow = (s32)(((s64)g_dt * 1000000 / (s32)(raisingTime >> 1) + g_dtDither) >> 12) + glow;
         if (glow > 1000)
             glow = 1000;
     } else if (glow != 0) {
-        glow -= g_dtMs * 1000 / (s32)(raisingTime >> 1);
+        glow -= (s32)(((s64)g_dt * 1000000 / (s32)(raisingTime >> 1) + g_dtDither) >> 12);
         if (glow < 0)
             glow = 0;
     }
@@ -507,7 +508,7 @@ s32 Wheel::MoveAlongRail(s32 limit, s8 dir)
     railTravel = Vec3s_DistXZ(&railStart, &pos);
     w.speed = (s16)(translation * 1000 / (s32)raisingTime);
     w.step = 0;
-    w.step = (s16)(w.speed * g_dt / 4096);
+    w.step = (s16)((w.speed * g_dt + g_dtDither) >> 12);
     if ((limit != 0 && railTravel >= limit) || (limit == 0 && railTravel <= SDW_ABS(w.step))) {
         if (limit == 0)
             SetPosition(&railStart);

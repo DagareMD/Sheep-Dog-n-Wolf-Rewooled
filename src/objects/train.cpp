@@ -38,6 +38,7 @@
 
 extern Wolf *g_pWolf;
 extern s32 g_dt;
+extern s32 g_dtDither; /* time.cpp: Rewooled, rounds a frame-time step (see engine/approach.cpp) */
 extern "C" const s16 g_sinTable4096[];
 extern "C" const s16 *g_pCosTable;
 
@@ -727,14 +728,14 @@ sptr Train::HandleMessage(ScnObject *sender, u32 msgId, void *arg)
                     w.push.z = (s16)-vel.z;
                     if (w.push.x) {
                         if (sender->pos.z < pos.z)
-                            w.push.z = (s16)(g_dt * -0x44c / 0x1000);
+                            w.push.z = (s16)((g_dt * -0x44c + g_dtDither) >> 12);
                         else
-                            w.push.z = (s16)(g_dt * 0x44c / 0x1000);
+                            w.push.z = (s16)((g_dt * 0x44c + g_dtDither) >> 12);
                     } else {
                         if (sender->pos.x < pos.x)
-                            w.push.x = (s16)(g_dt * -0x44c / 0x1000);
+                            w.push.x = (s16)((g_dt * -0x44c + g_dtDither) >> 12);
                         else
-                            w.push.x = (s16)(g_dt * 0x44c / 0x1000);
+                            w.push.x = (s16)((g_dt * 0x44c + g_dtDither) >> 12);
                     }
                     w.push.y = 0;
                     w.out->delta.x = w.push.x;

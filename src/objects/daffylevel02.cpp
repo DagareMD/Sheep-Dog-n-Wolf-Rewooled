@@ -111,6 +111,8 @@ inline void PlayCine(u32 id, u32 flags, Box *box, Box *sheep, void *text)
 #define SDW_INLINE_FREE_INBOX_BOX_VEC3S 1
 #define SDW_INLINE_FREE_INBOXXZ_BOX_VEC3S 1
 #include "../engine/coll_box_inlines.h"
+extern s32 g_dt;
+extern s32 g_dtDither; /* time.cpp: Rewooled, rounds a frame-time step (see engine/approach.cpp) */
 #undef SDW_INLINE_FREE_INBOX_BOX_VEC3S
 #undef SDW_INLINE_FREE_INBOXXZ_BOX_VEC3S
 
@@ -631,7 +633,7 @@ void DaffyLevel02::DrawAlertIcon()
 void DaffyLevel02::UpdateHeadSweep()
 {
     Vec3s angle;
-    headSweepPhase = (headSweepPhase + headSweepSpeed * (g_dtMs >> 1)) & 0xfff;
+    headSweepPhase = (headSweepPhase + ((headSweepSpeed * g_dt * 500 + g_dtDither) >> 12)) & 0xfff;
     headYaw = g_sinTable4096[headSweepPhase] * headMaxAngle / 360;
     angle.x = 0;
     angle.y = headYaw;

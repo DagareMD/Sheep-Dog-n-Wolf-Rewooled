@@ -142,6 +142,8 @@ inline s32 Idle(Dragon *d)
 #undef SDW_INLINE_FREE_INBOXXZ_BOX_VEC3S
 #define SDW_INLINE_FREE_INBOX_BOX_VEC3S 1
 #include "../engine/coll_box_inlines.h"
+extern s32 g_dt;
+extern s32 g_dtDither; /* time.cpp: Rewooled, rounds a frame-time step (see engine/approach.cpp) */
 #undef SDW_INLINE_FREE_INBOX_BOX_VEC3S
 inline void StartCine(u32 id, u32 flags, u32 unused = 0)
 {
@@ -797,9 +799,9 @@ s32 Dragon::VerticalMove(s32 up)
     w.step.x = 0;
     w.step.z = 0;
     if (up)
-        w.step.y = -(g_dtMs * 160 / riseAnimMs);
+        w.step.y = -((g_dt * 160000 / riseAnimMs + g_dtDither) >> 12);
     else
-        w.step.y = g_dtMs * 160 / descendAnimMs;
+        w.step.y = (g_dt * 160000 / descendAnimMs + g_dtDither) >> 12;
     w.collision = Collide_ResolveMove(&w.step, &w.contact, 0xb54, RESOLVE_SLIDE_ALL | RESOLVE_KEEP_Y, 0, 0, 10, 0, 0);
     Translate(&w.step);
     if (up) {

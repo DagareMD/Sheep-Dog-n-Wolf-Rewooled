@@ -100,6 +100,7 @@ extern "C" s16 g_sinTable4096[5122];
 extern "C" const s16 *g_pCosTable;
 extern Wolf *g_pWolf;
 extern s32 g_dt, g_dtMs;
+extern s32 g_dtDither; /* time.cpp: Rewooled, rounds a frame-time step (see engine/approach.cpp) */
 extern u32 g_gameTime, g_gameFlags;
 
 #define SDW_INLINE_FREE_SCN_GETPROPU32_U16_U32 1
@@ -176,7 +177,7 @@ void Rock::ApplyGravity(Vec3s *delta)
         speed = 200;
     else if (speed > 3000)
         speed = 3000;
-    delta->y += (s16)(speed * g_dt / 4096);
+    delta->y += (s16)((speed * g_dt + g_dtDither) >> 12);
 }
 
 u16 Rock::Move(Vec3s *delta, u16 resolveFlags, s32 pushing)
@@ -209,9 +210,9 @@ u16 Rock::Move(Vec3s *delta, u16 resolveFlags, s32 pushing)
             ((w.contact.movableObj && w.contact.movableObj->GetClassId() == CLASSID_WOLF) ||
              (w.distance < 150 && g_pWolf->pos.y <= pos.y + 50))) {
             w.exclude = this;
-            w.saved.x = g_dtMs * 300 * ROCK_SIGN(g_pWolf->pos.x - pos.x) / 1000;
-            w.saved.z = g_dtMs * 300 * ROCK_SIGN(g_pWolf->pos.z - pos.z) / 1000;
-            w.saved.y -= (s16)(g_dtMs * 800 / 1000);
+            w.saved.x = (g_dt * 300 * ROCK_SIGN(g_pWolf->pos.x - pos.x) + g_dtDither) >> 12;
+            w.saved.z = (g_dt * 300 * ROCK_SIGN(g_pWolf->pos.z - pos.z) + g_dtDither) >> 12;
+            w.saved.y -= (s16)((g_dt * 800 + g_dtDither) >> 12);
             if (g_dtMs > 100) {
                 if (ROCK_ABS(w.saved.x) > 30)
                     w.saved.x = ROCK_SIGN(w.saved.x) * 30;
@@ -311,7 +312,7 @@ void Rock::Update()
             settleMs = 2000;
             break;
         case ROCK_ST_LAUNCHED:
-            w.dt = g_dtMs >> 2;
+            w.dt = (g_dt * 250 + g_dtDither) >> 12;
             w.arc = &launch;
             if (w.arc->flags.full3D)
                 w.arcResult = w.arc->Step(w.dt, &w.target.x, &w.target.y, &w.target.z);

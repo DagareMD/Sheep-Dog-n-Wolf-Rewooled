@@ -50,6 +50,7 @@ extern "C" s16 Math_RadiansToAngle4096(float);
 #include "../engine/tex_table.h"
 #include "../engine/draw2d.h"
 #include "../engine/id_list.h"
+extern s32 g_dtDither; /* time.cpp: Rewooled, rounds a frame-time step (see engine/approach.cpp) */
 extern "C" u32 Rgb24_Lerp(u32, u32, s16);
 void Camera_StartScripted(ScnObject *, Camera *, u16, u16, u16, Vec3s *, u16, u32, s32);
 u16 Sound_Play(u16, void *, u16, u8, s32);
@@ -213,7 +214,7 @@ s32 elastic::ApplyTension(const Vec3s *amount, const Vec3s *velocity, Vec3s *ste
             speed = len - LONGUEUR_MAX / 2;
         else
             speed = speed * tension / 4096;
-        speed = ((speed << 10) / 1000) * g_dtMs / 1024;
+        speed = (s32)((((s64)((speed << 10) / 1000) * g_dt * 1000 / 1024) + g_dtDither) >> 12);
         Vec3s_ScaleByRatio(&force, &combined, speed, len);
         step->x -= force.x;
         step->y -= force.y;
@@ -255,7 +256,7 @@ void elastic::SetupLaunch(s32 baseY, const Vec3s *amount, s32 height, s32 distan
 }
 void elastic::StepLaunch(Vec3s *out)
 {
-    s32 step = launchSpeed * g_dtMs / 1024;
+    s32 step = (s32)((((s64)launchSpeed * g_dt * 1000 / 1024) + g_dtDither) >> 12);
     launchTravelled += step;
     out->y = launchBaseY - launchHeight * g_sinTable4096[launchTravelled * launchAnglePerUnit / 4096] / 4096;
     out->x = launchDir.x * step / 4096;
@@ -275,7 +276,7 @@ void elastic::StartVibration(const Vec3s *from, const Vec3s *centre, s32 rate)
 }
 s32 elastic::StepVibration(Vec3s *out)
 {
-    vibT += (s16)(vibRate * g_dtMs / 4096);
+    vibT += (s16)((((s64)vibRate * g_dt * 1000 / 4096) + g_dtDither) >> 12);
     if (vibAmp <= 0)
         return 0;
     if ((vibT - 0x800 >= 0 ? vibT - 0x800 : -(vibT - 0x800)) >= vibAmp) {
@@ -297,7 +298,7 @@ void elastic::StartPullUp(const Vec3s *start, s32 speed)
 s32 elastic::StepPullUp(Vec3s *out)
 {
     s16 c = 0x800 - g_pCosTable[pullUpAngle] / 2;
-    pullUpAngle += (s16)(pullUpRate * g_dtMs / 4096);
+    pullUpAngle += (s16)((((s64)pullUpRate * g_dt * 1000 / 4096) + g_dtDither) >> 12);
     Lerp_SetVecTarget(pullUpTarget);
     Vec3s_LerpToTarget(out, &pullUpStart, c);
     if (pullUpAngle >= 0xa00) {

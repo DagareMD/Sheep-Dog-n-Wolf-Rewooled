@@ -29,6 +29,7 @@ struct BallMoveMessage {
     Vec3s velocity;
 };
 extern s32 g_dt;
+extern s32 g_dtDither; /* time.cpp: Rewooled, rounds a frame-time step (see engine/approach.cpp) */
 extern u8 g_sharedScratch[];
 #include "../engine/scenaric.h"
 #include "../engine/scn_tools.h"
@@ -152,7 +153,7 @@ void CannonBall2::Update()
                 break;
             case CB2_ST_SINK:
                 delta.x = delta.z = 0;
-                delta.y = (g_dt * 100) >> 12;
+                delta.y = (g_dt * 100 + g_dtDither) >> 12;
                 Translate(&delta);
                 timer += g_dt;
                 if (timer >= 0x1000)

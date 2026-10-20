@@ -38,6 +38,7 @@ u32 Anim_Start(Instance *, Animator *, u16, u32);
 #undef SDW_INLINE_COLLBOX_CONTAINSXZ_VEC3S
 extern Wolf *g_pWolf;
 extern s32 g_dt, g_dtMs;
+extern s32 g_dtDither; /* time.cpp: Rewooled, rounds a frame-time step (see engine/approach.cpp) */
 s32 Rand_Bounded(s32);
 #include "../engine/id_list.h"
 #include "../engine/scn_tools.h"
@@ -82,7 +83,7 @@ void Bird::Update()
                 offscreenTicks++;
             break;
         case BIRD_ST_CIRCLE:
-            orbitRot.y += (s16)(orbitAngSpeed * g_dt / 4096);
+            orbitRot.y += (s16)((orbitAngSpeed * g_dt + g_dtDither) >> 12);
             if (ABS_VALUE(orbitRot.y) >= 0x3ff) {
                 if (Rand_Bounded(2)) {
                     reverseNext = Rand_Bounded(2);
@@ -102,7 +103,7 @@ void Bird::Update()
             newPos.x = orbitCentre.x + (s16)transformedOrbit.x;
             newPos.y = pos.y;
             newPos.z = orbitCentre.z + (s16)transformedOrbit.z;
-            SetHeading(GetHeading() + orbitAngSpeed * g_dt / 4096);
+            SetHeading(GetHeading() + ((orbitAngSpeed * g_dt + g_dtDither) >> 12));
             SetPosition(&newPos);
             break;
         case BIRD_ST_TAKEOFF:

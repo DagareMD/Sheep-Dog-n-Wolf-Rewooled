@@ -33,6 +33,7 @@ u32 Anim_Start(Instance *, Animator *, u16, u32);
 #undef SDW_INLINE_SCNBODY_PLAYANIM_U16_S32_S32
 extern Wolf *g_pWolf;
 extern s32 g_dt, g_dtMs;
+extern s32 g_dtDither; /* time.cpp: Rewooled, rounds a frame-time step (see engine/approach.cpp) */
 s32 Rand_Bounded(s32);
 u16 Sound_Play(u16, void *, u16, u8, s32);
 s32 Vec3s_DistXZ(Vec3s *, Vec3s *);
@@ -95,7 +96,7 @@ void Bat::Update()
                 SetState(BAT_ST_RETURN);
                 break;
             }
-            orbitRot.y += (s16)(spinSpeed * g_dt / 4096);
+            orbitRot.y += (s16)((spinSpeed * g_dt + g_dtDither) >> 12);
             transformedOrbit.x = orbitOffset.x;
             transformedOrbit.y = orbitOffset.y;
             transformedOrbit.z = orbitOffset.z;
@@ -103,10 +104,10 @@ void Bat::Update()
             Mat34s_TransformVec3i(&matrix, (Vec3i *)&transformedOrbit, &transformedOrbit);
             newPos.x = targetPos.x + (s16)transformedOrbit.x;
             newPos.z = targetPos.z + (s16)transformedOrbit.z;
-            SetHeading(GetHeading() + spinSpeed * g_dt / 4096);
+            SetHeading(GetHeading() + ((spinSpeed * g_dt + g_dtDither) >> 12));
             verticalDelta = targetPos.y - pos.y;
             verticalDelta = verticalDelta * 350 / (s32)distance;
-            verticalDelta = verticalDelta * g_dt / 4096;
+            verticalDelta = (verticalDelta * g_dt + g_dtDither) >> 12;
             newPos.y = pos.y + verticalDelta;
             SetPosition(&newPos);
             hoverHeight = (s16)Rand_Range(0x55, 0xff);

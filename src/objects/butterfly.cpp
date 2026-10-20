@@ -45,6 +45,7 @@ u32 Anim_Start(Instance *, Animator *, u16, u32);
 #undef SDW_INLINE_ZONELIST_LOAD_U16
 extern Wolf *g_pWolf;
 extern s32 g_dt;
+extern s32 g_dtDither; /* time.cpp: Rewooled, rounds a frame-time step (see engine/approach.cpp) */
 s32 Rand_Bounded(s32);
 #define SDW_INLINE_FREE_PROPU32_VOID_U32 1
 #include "../engine/scn_tools_inlines.h"
@@ -75,7 +76,7 @@ void Butterfly::Update()
     Mat34s c;
     switch (state) {
         case BUTTERFLY_ST_FLUTTER:
-            orbitRot.y += (s16)(orbitAngSpeed * g_dt / 0x1000);
+            orbitRot.y += (s16)((orbitAngSpeed * g_dt + g_dtDither) >> 12);
             if ((orbitRot.y >= 0 ? orbitRot.y : -orbitRot.y) >= 0x3ff) {
                 reverseNext = Rand_Bounded(2);
                 SetState(BUTTERFLY_ST_FLUTTER);
@@ -91,11 +92,11 @@ void Butterfly::Update()
                 targetVert = (s16)Rand_Range(appearPos.y - 200, appearPos.y);
             a.x = orbitCentre.x + (s16)b.x;
             a.z = orbitCentre.z + (s16)b.z;
-            SetYaw((s16)(GetYaw() + orbitAngSpeed * g_dt / 0x1000));
+            SetYaw((s16)(GetYaw() + ((orbitAngSpeed * g_dt + g_dtDither) >> 12)));
             vertDelta = targetVert - pos.y;
             if (vertDelta) {
                 vertStep = (s16)(vertDelta * 80 / (vertDelta >= 0 ? vertDelta : -vertDelta));
-                vertStep = (s16)(vertStep * g_dt / 0x1000);
+                vertStep = (s16)((vertStep * g_dt + g_dtDither) >> 12);
             } else
                 vertStep = 0;
             a.y = pos.y + vertStep;
