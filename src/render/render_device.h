@@ -176,9 +176,11 @@ public:
 extern RenderBackend *g_renderBackend;
 extern RenderDevice *g_renderDevice;
 
-/* Rewooled option: 1 = the game's own bilinear texture filtering, 0 = nearest-neighbour (sharp, pixelated textures).
- * Defined in render_select.cpp; set by the pause menu's "Texture Filtering" item and read by the backend per draw. */
-extern u8 g_textureFilteringEnabled;
+/* Rewooled option, the texture filter: 0 = nearest-neighbour (sharp, pixelated textures); 1 = the game's own bilinear
+ * filtering; 2 = sharp bilinear (each texel stays a sharp block, but the edge between two texels is blended over a
+ * narrow band, so a pixelated texture has no staircase edges). Defined in render_select.cpp; set by the pause menu's
+ * "Texture Filtering" item and read by the backend. */
+extern u8 g_textureFilterMode;
 
 enum RendererKind {
     RENDERER_VULKAN = 0, /* src/render/sdl3/, SDL_GPU's Vulkan driver */
