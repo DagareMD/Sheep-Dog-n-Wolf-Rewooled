@@ -20,6 +20,38 @@ int Game_Main(int argc, char **argv); /* src/app/app_main.cpp */
 static SDL_Window *s_window;
 static unsigned s_flags;
 static int s_wheel; /* the mouse wheel since the last Platform_ReadMouse */
+
+/* Rewooled: the mouse cursor hides after it has not moved for 3 seconds (as over a playing video), and shows again as
+ * soon as the mouse moves or a button is pressed. */
+#define CURSOR_IDLE_MS 3000
+static Uint64 s_cursorActiveMs; /* when the mouse last moved or was clicked, or the cursor was last shown */
+static int s_cursorIdleHidden;  /* the cursor is hidden by this timer (not by the game) */
+
+static void CursorActivity()
+{
+    s_cursorActiveMs = SDL_GetTicks();
+    if (s_cursorIdleHidden) {
+        s_cursorIdleHidden = 0;
+        SDL_ShowCursor();
+    }
+}
+
+/* called after the events of every poll: hides the cursor once it has been visible and still for CURSOR_IDLE_MS */
+static void CursorIdleUpdate()
+{
+    static int wasVisible = 0;
+    int visible = SDL_CursorVisible();
+    Uint64 now = SDL_GetTicks();
+
+    if (visible && !wasVisible)
+        s_cursorActiveMs = now; /* it has just been shown (by the game, or by CursorActivity): the time starts now */
+    wasVisible = visible;
+    if (visible && now - s_cursorActiveMs >= CURSOR_IDLE_MS) {
+        SDL_HideCursor();
+        s_cursorIdleHidden = 1;
+        wasVisible = 0;
+    }
+}
 static SDL_Gamepad *s_gamepad; /* the controller the game reads (Platform_ReadJoystick) */
 
 /* SDL's log, also written to SheepD3D.log in the save folder (save_store.h), started afresh every run: on Windows the
@@ -145,6 +177,12 @@ unsigned Platform_PollEvents()
                 break;
             case SDL_EVENT_MOUSE_WHEEL:
                 s_wheel += (int)(e.wheel.y * 120.0f); /* DirectInput's units: 120 per notch */
+                CursorActivity();
+                break;
+            case SDL_EVENT_MOUSE_MOTION:
+            case SDL_EVENT_MOUSE_BUTTON_DOWN:
+            case SDL_EVENT_MOUSE_BUTTON_UP:
+                CursorActivity();
                 break;
             case SDL_EVENT_KEY_DOWN:
                 /* full screen, for a window the renderer scales into (Direct3D 7 has its own display modes) */
@@ -159,6 +197,7 @@ unsigned Platform_PollEvents()
                 break;
         }
     }
+    CursorIdleUpdate();
     return result;
 }
 
