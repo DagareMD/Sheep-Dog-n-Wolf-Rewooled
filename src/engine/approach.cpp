@@ -52,10 +52,17 @@ s16 Math_ApproachAngle(s16 cur, s16 target, s32 *rate, s32 limit, s32 accel, s32
     }
     work.step = (work.desired_rate * g_dt + g_dtDither) >> 12; /* Rewooled: dithered; the arithmetic shift rounded a left turn and a right turn differently */
     if (force_min_step && work.step == 0 && work.desired_rate != 0) {
-        if (work.desired_rate >= 0)
-            work.step = 1;
-        else
-            work.step = -1;
+        /* Rewooled: the original moved a whole unit EVERY FRAME here (to finish an approach). A unit a frame is a rate that
+         * grows with the frame rate: 60 units a second at 60 fps, 300 at 300 fps. For a small difference the camera's auto
+         * turn has no other speed (its limit is proportional to the difference, and rounds to nothing), so the camera lined
+         * up with the way the wolf was walking five times as fast at 300 fps as at 60. The minimum is now what it was at
+         * 60 fps, as a rate, 60 units a second (dithered: a whole unit most frames at 60 fps, one in five at 300), and never
+         * more than the angle still to go. */
+        s32 minStep = (60 * g_dt + g_dtDither) >> 12;
+        s32 left = (s16)((s16)((target - cur + 2048) & 4095) - 2048);
+        if (minStep > SDW_ABS(left))
+            minStep = SDW_ABS(left);
+        work.step = work.desired_rate >= 0 ? minStep : -minStep;
     }
     target = (s16)((cur + work.step) & 4095);
     *rate = work.desired_rate;
