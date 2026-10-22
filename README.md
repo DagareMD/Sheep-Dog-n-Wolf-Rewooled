@@ -25,6 +25,13 @@
 - **Multiple Renderers** Support for Vulkan, DX12 and Metal
 - **Modern Controllers:** Support for modern controllers via SDL3
 - **Scaled Textures:** Support for swapping texture for arbitrarily sized PNGs
+### Nintendo Switch Version
+
+There's a project based on this source code porting it to Nintendo Switch 
+
+You can check it out [here](https://github.com/adumah/SheepDogWolf-NX)
+
+Disclaimer: **This project is not affiliated with the Rewooled project**
 
 ### For Mac users
 
