@@ -1393,7 +1393,16 @@ static void Sdl3_UpdatePresentMode(SDL_GPUDevice *gpu, SDL_Window *window)
         return;
     applied = vsync;
     if (!vsync) {
-        if (SDL_WindowSupportsGPUPresentMode(gpu, window, SDL_GPU_PRESENTMODE_MAILBOX))
+        /* MAILBOX is not "no V-Sync": SDL's documentation has it wait for the vblank before it presents, and only replace a
+         * frame that is still waiting. On Vulkan the game can still render faster than the display; on Direct3D 12 the
+         * frames in flight fill up and the swapchain wait paces the game to the monitor's refresh rate while the window has
+         * focus (it ran uncapped only when another window was in front). Only IMMEDIATE presents at once there, at the cost
+         * of tearing, which is what turning V-Sync off asks for. */
+        const char *driver = SDL_GetGPUDeviceDriver(gpu);
+        int direct3d12 = driver && SDL_strcmp(driver, "direct3d12") == 0;
+        if (direct3d12 && SDL_WindowSupportsGPUPresentMode(gpu, window, SDL_GPU_PRESENTMODE_IMMEDIATE))
+            mode = SDL_GPU_PRESENTMODE_IMMEDIATE;
+        else if (SDL_WindowSupportsGPUPresentMode(gpu, window, SDL_GPU_PRESENTMODE_MAILBOX))
             mode = SDL_GPU_PRESENTMODE_MAILBOX;
         else if (SDL_WindowSupportsGPUPresentMode(gpu, window, SDL_GPU_PRESENTMODE_IMMEDIATE))
             mode = SDL_GPU_PRESENTMODE_IMMEDIATE;
