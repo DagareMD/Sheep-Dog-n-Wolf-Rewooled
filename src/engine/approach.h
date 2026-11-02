@@ -6,6 +6,8 @@
 
 s16 Math_ApproachAngle(s16 cur, s16 target, s32 *rate, s32 limit, s32 accel, s32 decel,
                        s32 force_min_step);
+s16 Math_ApproachAngleGoal(s16 cur, s16 target, s32 *rate, s32 limit, s32 accel, s32 decel,
+                           s32 force_min_step); /* for a fixed goal, not a target a frame ahead; see approach.cpp */
 s32 Math_ApproachLinear(s32 cur, s32 target, s32 limit, s32 accel, s32 decel);
 s32 Math_ApproachValue(s32, s32, s32 *, s32, s32, s32);
 s16 Math_StepAngleTowards(s16 current, s16 target, s32 rate);

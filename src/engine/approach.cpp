@@ -15,20 +15,18 @@ extern s32 g_dtMs;
 
 #define SDW_ABS(v) ((v) >= 0 ? (v) : -(v))
 
+/* Rewooled: the shortest time Math_ApproachAngle works out "the rate that reaches the target" over: 0, so one frame, as the
+ * original did, for every caller but Math_ApproachAngleGoal (below). */
+static s32 s_approachMinHorizon = 0;
+
 /* signed 16-bit angle inputs/return; 32-bit angular rate. */
 s16 Math_ApproachAngle(s16 cur, s16 target, s32 *rate, s32 limit, s32 accel, s32 decel, s32 force_min_step)
 {
     struct {
         s32 desired_rate, rate_step, step;
     } work;
-    /* Rewooled: the rate that would reach the target in ONE FRAME is what this routine brakes by (half of it is the speed
-     * limit near the target), so how it braked depended on the frame rate. At 60 fps the rate for the last unit of angle is
-     * 60 units/s, which the deceleration limit can follow; at 300 fps it is 300, which it cannot (shedding it takes about 15
-     * frames), so a camera easing onto a snap-yaw point slid through it still turning, the snap rule ("the snap point is
-     * behind, the camera is moving forward: go on to the next one") sent it on, and on again: it missed the point at
-     * 144 fps and above and spun at 200 to 300. The one-frame horizon is now never shorter than a 60 fps frame (68 units
-     * of time), so it brakes as it does at 60 fps at any frame rate. At 60 fps and below nothing changes. */
-    work.desired_rate = ((s16)((s16)((target - cur + 2048) & 4095) - 2048) << 12) / (g_dt > 68 ? g_dt : 68);
+    work.desired_rate = ((s16)((s16)((target - cur + 2048) & 4095) - 2048) << 12) /
+                        (g_dt > s_approachMinHorizon ? g_dt : s_approachMinHorizon);
     work.step = SDW_ABS(work.desired_rate);
     if (work.step <= (limit << 1)) {
         if (work.step > 1)
@@ -74,6 +72,28 @@ s16 Math_ApproachAngle(s16 cur, s16 target, s32 *rate, s32 limit, s32 accel, s32
     target = (s16)((cur + work.step) & 4095);
     *rate = work.desired_rate;
     return target;
+}
+
+/* Rewooled: Math_ApproachAngle for a target that is a fixed GOAL, such as the camera's snap-yaw points.
+ *
+ * The rate that would reach the target in ONE FRAME is what the routine brakes by (half of it is the speed limit near the
+ * target), so how it braked depended on the frame rate. At 60 fps the rate for the last unit of angle is 60 units/s, which the
+ * deceleration limit can follow; at 300 fps it is 300, which it cannot (shedding it takes about 15 frames), so a camera easing
+ * onto a snap point slid through it still turning, the snap rule ("the snap point is behind, the camera is moving forward: go
+ * on to the next one") sent it on, and on again: it missed the point at 144 fps and above and spun at 200 to 300.
+ * Here that rate is worked out over at least a 60 fps frame (68 units of time), so it brakes as it does at 60 fps at any frame
+ * rate; at 60 fps and slower this is exactly Math_ApproachAngle.
+ *
+ * It is NOT for a target that is only a frame or so ahead ("where I am plus this frame's stick movement", as manual rotation
+ * and the automatic turns make): those rely on the one-frame rate being the speed they want, and would turn at a fraction
+ * of it, 20% at 300 fps. */
+s16 Math_ApproachAngleGoal(s16 cur, s16 target, s32 *rate, s32 limit, s32 accel, s32 decel, s32 force_min_step)
+{
+    s16 result;
+    s_approachMinHorizon = 68;
+    result = Math_ApproachAngle(cur, target, rate, limit, accel, decel, force_min_step);
+    s_approachMinHorizon = 0;
+    return result;
 }
 
 /* step uses accel when target >= cur, decel otherwise; it is not a speed-magnitude comparison.
