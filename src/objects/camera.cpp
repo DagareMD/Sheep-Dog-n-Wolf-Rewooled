@@ -240,6 +240,7 @@ u8 g_camSpeedSetting = CAMERA_CONTROL_CENTRE;
 u8 g_camAccelerationSetting = CAMERA_CONTROL_CENTRE;
 u8 g_camInvertJoystick = 0;
 static u8 s_camManualYaw = 0;     /* set by Camera_OnManualRotate, consumed by the next Camera_SmoothToDesired */
+static u8 s_camSnapGoal = 0;      /* Rewooled: the yaw target is a snap-yaw point, a fixed goal; consumed by the next Camera_SmoothToDesired */
 static u8 s_camManualPitch = 0;
 
 /* Each half of the slider is linear, with the original value exactly at its centre. */
@@ -1082,11 +1083,16 @@ void Camera_SmoothToDesired(Camera *cam, Vec3s *angles, const s32 *speeds, s16 *
         } else {
             angles->x = Math_ApproachAngle(cam->rot.x, angles->x, &g_camPitchVel, w.pitchSpeed << w.shift, w.pitchAccel,
                                            w.pitchAccel, 1);
-            angles->y = Math_ApproachAngle(cam->rot.y, angles->y, &g_camYawVel, w.yawSpeed << w.shift, w.yawAccel,
-                                           w.yawDecel, 1);
+            if (s_camSnapGoal) /* a snap-yaw point: brake as at 60 fps (see Math_ApproachAngleGoal) */
+                angles->y = Math_ApproachAngleGoal(cam->rot.y, angles->y, &g_camYawVel, w.yawSpeed << w.shift, w.yawAccel,
+                                                   w.yawDecel, 1);
+            else
+                angles->y = Math_ApproachAngle(cam->rot.y, angles->y, &g_camYawVel, w.yawSpeed << w.shift, w.yawAccel,
+                                               w.yawDecel, 1);
             angles->z = Math_ApproachAngle(cam->rot.z, angles->z, &g_camRollVel, speeds[2] << w.shift, w.rollAccel,
                                            w.rollAccel, 1);
         }
+        s_camSnapGoal = 0;
         if (angles->x > 0x800) {
             if (angles->x < 0xc00)
                 angles->x = 0xc00;
@@ -2255,6 +2261,7 @@ void Camera_UpdateFollow(Camera *camera, Pad *pad)
         g_camTrajectory = 0;
         g_camTrajSegment = 0;
     }
+    s_camSnapGoal = w.snap != 0; /* the snap block above made the yaw target a snap-yaw point */
     Camera_SmoothToDesired(camera, &w.angles, &w.speeds.x, &w.distance, w.focal, &w.aim, w.trajectory);
     if (w.restrictEnabled)
         w.maxVert = w.restriction->eyeVertMax;
