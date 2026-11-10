@@ -241,6 +241,7 @@ u8 g_camAccelerationSetting = CAMERA_CONTROL_CENTRE;
 u8 g_camInvertJoystick = 0;
 static u8 s_camManualYaw = 0;     /* set by Camera_OnManualRotate, consumed by the next Camera_SmoothToDesired */
 static u8 s_camSnapGoal = 0;      /* Rewooled: the yaw target is a snap-yaw point, a fixed goal; consumed by the next Camera_SmoothToDesired */
+static s8 s_camSnapKick = 0;      /* Rewooled: -1 or +1 on the frame the turn-camera button is pressed in a snap-yaw zone (Camera_UpdateFollow) */
 static u8 s_camManualPitch = 0;
 
 /* Each half of the slider is linear, with the original value exactly at its centre. */
@@ -2121,15 +2122,19 @@ void Camera_UpdateFollow(Camera *camera, Pad *pad)
     w.snap = g_camReqFlags.snapYaw || (w.restrictEnabled && w.restriction->flags.snapYaw);
     w.smooth = g_camFlags.smooth;
     w.side = 0;
+    s_camSnapKick = 0;
     if (!w.forbidPad) {
         if (pad->cur.typeLen.type == PADTYPE_ANALOG)
             Pad_StickToDeadzonedAxes(pad->cur.rightX, pad->cur.rightY, &w.side, &w.vertical);
         if (w.side == 0) {
             if (w.snap) {
-                if (!(pad->cur.buttons & ~g_padMasks[4]) && (pad->prev.buttons & ~g_padMasks[4]))
+                if (!(pad->cur.buttons & ~g_padMasks[4]) && (pad->prev.buttons & ~g_padMasks[4])) {
                     w.side = -256;
-                else if (!(pad->cur.buttons & ~g_padMasks[5]) && (pad->prev.buttons & ~g_padMasks[5]))
+                    s_camSnapKick = -1;
+                } else if (!(pad->cur.buttons & ~g_padMasks[5]) && (pad->prev.buttons & ~g_padMasks[5])) {
                     w.side = 256;
+                    s_camSnapKick = 1;
+                }
             } else {
                 if (!(pad->cur.buttons & ~g_padMasks[4])) {
                     if (!(pad->cur.buttons & ~g_padMasks[5]))
@@ -2147,6 +2152,8 @@ void Camera_UpdateFollow(Camera *camera, Pad *pad)
         if (w.side > 0 && Vec3s_ManhattanDist(&camera->pos, &g_camBlockPosPos) < 80)
             w.side = 0;
         w.side = Camera_ManualTurnStep(w.side, w.speeds.y, 2);
+        if (w.side == 0)
+            s_camSnapKick = 0; /* the press was refused (the camera is against a wall that way) */
     }
     w.side += ((g_camAutoYawRate * 256 * g_dt) + (g_dtDither << 8)) >> 20;
     if (g_camReqDist)
@@ -2263,6 +2270,19 @@ void Camera_UpdateFollow(Camera *camera, Pad *pad)
     }
     s_camSnapGoal = w.snap != 0; /* the snap block above made the yaw target a snap-yaw point */
     Camera_SmoothToDesired(camera, &w.angles, &w.speeds.x, &w.distance, w.focal, &w.aim, w.trajectory);
+    if (s_camSnapKick != 0) {
+        /* Rewooled: in a snap-yaw zone the turn-camera button nudges the camera on one frame, and on the next the snap rule
+         * (above) sees it moving away from the snap point and carries it on to the next one. That only works if the camera
+         * really left the snap point on the press frame, and the original made sure of it at 60 fps and below: a step that
+         * rounded to nothing was forced up to a whole unit. Rounded to a RATE instead (see Math_ApproachAngle) it is nothing
+         * four frames in five at 300 fps, and the press then did nothing. So the press frame always moves at least a unit
+         * (and has some velocity for the snap rule to look at). Stick rotation does not come through here. */
+        if (w.angles.y == camera->rot.y)
+            w.angles.y = (camera->rot.y + s_camSnapKick) & 0xfff;
+        if (g_camYawVel == 0) /* only if the press gave it none; it keeps the momentum it has, as the original did */
+            g_camYawVel = s_camSnapKick;
+        s_camSnapKick = 0;
+    }
     if (w.restrictEnabled)
         w.maxVert = w.restriction->eyeVertMax;
     else
